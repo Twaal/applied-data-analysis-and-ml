@@ -1,21 +1,55 @@
-Course content
-The course introduces a variety of central algorithms and methods essential for studies of statistical data analysis and machine learning. The course is project-based and through the various projects, the students are exposed to fundamental research problems in these fields, with the aim to reproduce state-of-the-art scientific results. The students will learn to develop and structure large codes for studying these systems, get acquainted with computing facilities, and learn how to handle large scientific projects. Good scientific and ethical conduct is emphasized throughout the course.
+Project 1 — Regression & Resampling Methods
+Course: FYS-STK3155 / FYS4155 — Data Analysis & ML
+University of Oslo, Fall 2025
 
-Learning outcome
-After completing the course you will:
+Group Members:
+- Bartosz Trela (bartoszt@uio.no)
+- Samson Fekade Badishe (samsonfb@uio.no)
+- Theodor Charles Merritt (Wålberg tcwaalbe@uio.no)
 
-have a basic understanding of Bayesian statistics and learning and common distributions.
-have an understanding of central algorithms used in statistical data analysis and machine learning, with an emphasis on supervised learning.
-have knowledge of central aspects of Monte Carlo methods, Markov chains, Gibbs samplers, data optimization, and their applications.
-understand linear and logistic regression methods.
-understand central optimization algorithms like stochastic gradient descent methods.
-have knowledge about central deep learning methods for both supervised and unsupervised learning.
-have experience working on numerical projects.
-have knowledge of other machine learning algorithms, such as decision trees, support vector machines,  ensemble methods like random forests, bagging, and boosting.
+Overview:
+This project implements and evaluates OLS, Ridge, and LASSO regression methods on the Runge function,
+including experiments with polynomial degree, noise, and resampling (bootstrap vs cross-validation).
+It also compares optimization methods (gradient descent, Adam, RMSProp, etc.) in the context of regression.
 
-Group members:
-- samsonfb@uio.no
-- bartoszt@uio.no
+applied-data-analysis-and-ml/
+├── Project1/
+│   ├── chat-logs/                  # AI chat logs used during the project
+│   ├── code/                        # Jupyter notebooks with main project code
+│   │   ├── exercisesweek36.ipynb    # Previous exercises (not relevant for main project)
+│   │   ├── exercisesweek37.ipynb    # Previous exercises (not relevant for main project)
+│   │   └── project1.ipynb           # Main notebook with full project implementation
+│   ├── ipynb/                       # Instruction files for the project (for reference)
+│   ├── pdf/                         # Final report in PDF and LaTeX formats
+│   │   ├── Project1.pdf
+│   │   └── Project1.tex
+│   └── report/                      # Previous exercises and draft reports (not relevant)
+├── exercises/                        # Additional exercises from the course
+├── lecture notes/                     # Lecture notes provided for the course
+├── .gitignore                         # Git ignore rules
+├── README.txt                         # This file
+└── requirements.txt                   # Python package requirements
 
-Usage:
-- Install dependancies: pip install -r requirements.txt
+How to Run:
+1. Clone the repo:
+   git clone <repo-url>
+   cd applied-data-analysis-and-ml/Project1
+
+2. Install dependencies:
+   pip install -r ../requirements.txt
+
+3. Launch the notebook:
+   jupyter notebook Project1.ipynb
+
+4. Run all cells to reproduce experiments, plots, and metrics.
+
+Notes:
+- Figures appear inline in the notebook and are exported manually if desired.
+- The report (PDF) is in the pdf/ folder.
+- Source code is organized by part (a–h) and contains comments and docstrings.
+- There is no external dataset; Runge’s function is generated within the notebook.
+
+Report:
+The project report is located at:
+   Project1/pdf/Project1.pdf
+It contains the full discussion, figures, results, and conclusions.
