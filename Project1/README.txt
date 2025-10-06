@@ -14,7 +14,8 @@ It also compares optimization methods (gradient descent, Adam, RMSProp, etc.) in
 
 applied-data-analysis-and-ml/
 ├── Project1/
-│   ├── chat-logs/                  # AI chat logs used during the project
+│   ├── README.txt                   # Project-specific README
+│   ├── chat-logs/                   # AI chat logs used during the project
 │   ├── code/                        # Jupyter notebooks with main project code
 │   │   ├── exercisesweek36.ipynb    # Previous exercises (not relevant for main project)
 │   │   ├── exercisesweek37.ipynb    # Previous exercises (not relevant for main project)
@@ -27,8 +28,8 @@ applied-data-analysis-and-ml/
 ├── exercises/                        # Additional exercises from the course
 ├── lecture notes/                     # Lecture notes provided for the course
 ├── .gitignore                         # Git ignore rules
-├── README.txt                         # This file
 └── requirements.txt                   # Python package requirements
+
 
 How to Run:
 1. Clone the repo:
