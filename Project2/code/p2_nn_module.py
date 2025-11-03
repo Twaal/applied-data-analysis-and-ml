@@ -28,6 +28,20 @@ import numpy as np
 # Feature utilities
 # -------------------------------
 
+def OLS_parameters(X, y):
+    return np.linalg.inv(X.T @ X) @ X.T @ y
+
+# Create a feature matrix X for the features. Here we use polynomial features up to degree 5, plus an intercept column of ones.
+def polynomial_features(x, p):
+    n = len(x)
+    X = np.zeros((n, p + 1))
+    for i in range(p + 1):
+        X[:, i] = x**i
+    return X
+
+def runge_function(x):
+    return 1 / (1 + 25 * x**2)
+
 def polynomial_features(x: np.ndarray, degree: int) -> np.ndarray:
 	"""Construct polynomial features up to given degree (inclusive).
 
