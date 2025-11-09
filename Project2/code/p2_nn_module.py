@@ -703,6 +703,26 @@ __all__.extend([
 # =============================================
 # PyTorch MLP (PTMLP) for parity testing with FFNN
 # =============================================
+
+# Utilities that don't require torch
+def inverse_transform_target(y_scaled: np.ndarray, y_scaler) -> np.ndarray:
+	"""Inverse-transform a scaled target using a fitted scaler with inverse_transform.
+
+	Parameters
+	- y_scaled: array-like, shape (n,) or (n,1)
+	- y_scaler: object exposing inverse_transform with shape (n,1)
+
+	Returns
+	- y: shape (n,)
+	"""
+	arr = np.asarray(y_scaled).reshape(-1, 1)
+	return y_scaler.inverse_transform(arr).ravel()
+
+
+def train_pt_mlp_regression(*args, **kwargs):
+	"""Placeholder when PyTorch isn't available; real implementation loaded if torch is installed."""
+	raise ImportError("PyTorch is not available; install torch to use train_pt_mlp_regression.")
+
 try:
 	import torch
 	import torch.nn as nn
@@ -755,4 +775,1067 @@ if torch is not None:
 			return self.fc3(x)  # linear output layer
 
 	__all__.append("PTMLP")
+
+
+	def train_pt_mlp_regression(
+		X_train_s: np.ndarray,
+		y_train_s: np.ndarray,
+		X_test_s: np.ndarray,
+		y_test_s: np.ndarray,
+		*,
+		in_features: int = 1,
+		h1: int = 100,
+		h2: int = 100,
+		out_features: int = 1,
+		activation: str = 'relu',
+		epochs: int = 300,
+		batch_size: int = 32,
+		learning_rate: float = 0.01,
+		seed: int = 42,
+		device: Optional[str] = None,
+		dtype: Optional[Any] = None,
+		print_every: int = 100,
+		y_scaler: Optional[object] = None,
+	) -> Dict[str, Any]:
+		"""Train a PTMLP regressor on scaled data and return metrics and predictions.
+
+		This function mirrors the training loop used in the notebook cell but wraps it
+		into a reusable API. It computes scaled MSE by default and, if provided a
+		`y_scaler` with inverse_transform, also reports original-scale MSE.
+
+		Returns a dictionary with keys:
+		- model: trained PTMLP model
+		- y_pred_train, y_pred_test: predictions on scaled data (numpy arrays)
+		- mse_train_scaled, mse_test_scaled: float MSE on scaled data
+		- mse_train_original, mse_test_original: floats if y_scaler given, else None
+		- y_train_orig, y_test_orig, y_pred_train_orig, y_pred_test_orig: arrays if y_scaler given
+		- history: list of (epoch, mse_train_scaled, mse_test_scaled) every print_every epochs
+		"""
+		assert torch is not None and nn is not None, "PyTorch not available"
+		# Device and seeds
+		if device is None:
+			device = 'cuda' if torch.cuda.is_available() else 'cpu'
+			device = torch.device(device)
+		elif isinstance(device, str):
+			device = torch.device(device)
+		torch.manual_seed(int(seed))
+		if torch.cuda.is_available():
+			try:
+				torch.cuda.manual_seed_all(int(seed))
+			except Exception:
+				pass
+
+		# DType: default to float64 to match NumPy defaults used elsewhere
+		if dtype is None:
+			dtype = torch.float64
+		try:
+			torch.set_default_dtype(dtype)
+		except Exception:
+			# Some builds disallow changing default dtype; continue with explicit dtype below
+			pass
+
+		# Prepare tensors on device
+		Xtr = torch.as_tensor(X_train_s, dtype=dtype, device=device)
+		ytr = torch.as_tensor(y_train_s, dtype=dtype, device=device)
+		Xte = torch.as_tensor(X_test_s, dtype=dtype, device=device)
+		yte = torch.as_tensor(y_test_s, dtype=dtype, device=device)
+
+		# Model and optimizer
+		model = PTMLP(
+			in_features=in_features, h1=h1, h2=h2, out_features=out_features, activation=activation
+		).to(device=device, dtype=dtype)
+		opt = torch.optim.Adam(model.parameters(), lr=float(learning_rate), betas=(0.9, 0.999), eps=1e-8)
+		loss_fn = nn.MSELoss(reduction='mean')
+
+		n = Xtr.shape[0]
+		history: List[Tuple[int, float, float]] = []
+		model.train()
+		for epoch in range(1, int(epochs) + 1):
+			perm = torch.randperm(n, device=device)
+			for start in range(0, n, batch_size):
+				end = min(start + batch_size, n)
+				idx = perm[start:end]
+				xb = Xtr.index_select(0, idx)
+				yb = ytr.index_select(0, idx)
+				opt.zero_grad(set_to_none=True)
+				preds = model(xb)
+				loss = loss_fn(preds, yb)
+				loss.backward()
+				opt.step()
+			# Log every print_every epochs
+			if print_every and epoch % int(print_every) == 0:
+				with torch.no_grad():
+					train_pred = model(Xtr)
+					test_pred = model(Xte)
+					mse_tr_scaled = MSE(y_train_s, train_pred.detach().cpu().numpy())
+					mse_te_scaled = MSE(y_test_s, test_pred.detach().cpu().numpy())
+				history.append((epoch, mse_tr_scaled, mse_te_scaled))
+
+		# Final eval
+		model.eval()
+		with torch.no_grad():
+			y_pred_train = model(Xtr).detach().cpu().numpy()
+			y_pred_test = model(Xte).detach().cpu().numpy()
+
+		mse_train_scaled = MSE(y_train_s, y_pred_train)
+		mse_test_scaled = MSE(y_test_s, y_pred_test)
+
+		# Original-scale metrics, if possible
+		mse_train_original = None
+		mse_test_original = None
+		y_train_orig = None
+		y_test_orig = None
+		y_pred_train_orig = None
+		y_pred_test_orig = None
+		if y_scaler is not None and hasattr(y_scaler, 'inverse_transform'):
+			try:
+				y_train_orig = inverse_transform_target(y_train_s, y_scaler)
+				y_test_orig = inverse_transform_target(y_test_s, y_scaler)
+				y_pred_train_orig = inverse_transform_target(y_pred_train, y_scaler)
+				y_pred_test_orig = inverse_transform_target(y_pred_test, y_scaler)
+				mse_train_original = float(np.mean((y_pred_train_orig - y_train_orig) ** 2))
+				mse_test_original = float(np.mean((y_pred_test_orig - y_test_orig) ** 2))
+			except Exception:
+				# If inverse transform fails, keep None
+				pass
+
+		return {
+			"model": model,
+			"y_pred_train": y_pred_train,
+			"y_pred_test": y_pred_test,
+			"mse_train_scaled": mse_train_scaled,
+			"mse_test_scaled": mse_test_scaled,
+			"mse_train_original": mse_train_original,
+			"mse_test_original": mse_test_original,
+			"y_train_orig": y_train_orig,
+			"y_test_orig": y_test_orig,
+			"y_pred_train_orig": y_pred_train_orig,
+			"y_pred_test_orig": y_pred_test_orig,
+			"history": history,
+		}
+
+__all__.extend([
+	"inverse_transform_target",
+	"train_pt_mlp_regression",
+])
+
+
+# =============================================
+# Part d) helpers for Runge experiment (FFNN)
+# Refactor of notebook logic into reusable functions
+# =============================================
+
+from collections import defaultdict
+import matplotlib.pyplot as plt
+
+
+def identify_best_by_activation_scaled(results_d: list) -> dict:
+	"""Return dict activation -> best result by lowest mse_test_scaled.
+
+	Each entry in results_d is expected to be a dict containing at least:
+	{ 'activation', 'depth', 'width', 'mse_test_scaled' }
+	"""
+	best_by_act = {}
+	acts = sorted({r['activation'] for r in results_d})
+	for act in acts:
+		subset = [r for r in results_d if r['activation'] == act]
+		if not subset:
+			continue
+		best = min(subset, key=lambda z: z['mse_test_scaled'])
+		best_by_act[act] = best
+	return best_by_act
+
+
+def generate_learning_curves_for_best(
+	results_d: list,
+	X_train_s: np.ndarray,
+	y_train_s: np.ndarray,
+	X_test_s: np.ndarray,
+	y_test_s: np.ndarray,
+	*,
+	epochs: int = 120,
+	batch_size: int = 32,
+	learning_rate: float = 1e-3,
+) -> dict:
+	"""Retrain the best-by-activation configs and return learning curves (scaled MSE).
+
+	Returns a dict: {(activation, depth, width): (train_curve, test_curve)}
+	where curves are np.ndarray of shape (epochs,).
+	"""
+	best_by_act = identify_best_by_activation_scaled(results_d)
+	curves = {}
+	for act, b in best_by_act.items():
+		d = int(b['depth']); w = int(b['width'])
+		layer_sizes = [1] + [w] * d + [1]
+		acts_conf = [act] * d + ['linear']
+
+		# Import here to avoid circular issues when the module is imported partially
+		# FFNN is defined above in this file
+		model = FFNN(
+			layer_sizes=layer_sizes,
+			activations=acts_conf,
+			loss='mse',
+			learning_rate=float(learning_rate),
+			optimizer='adam',
+			reg=None,
+			seed=42,
+		)
+
+		tr_curve = []
+		te_curve = []
+		for ep in range(int(epochs)):
+			model.train(
+				X_train_s,
+				y_train_s,
+				epochs=1,
+				batch_size=int(batch_size),
+				verbose=False,
+				shuffle=True,
+				log_metrics=False,
+			)
+			ytr_s = model.predict(X_train_s).ravel()
+			yte_s = model.predict(X_test_s).ravel()
+			tr_curve.append(float(np.mean((ytr_s - y_train_s.ravel()) ** 2)))
+			te_curve.append(float(np.mean((yte_s - y_test_s.ravel()) ** 2)))
+		curves[(act, d, w)] = (np.asarray(tr_curve), np.asarray(te_curve))
+	return curves
+
+
+def plot_learning_curves_scaled(curves: dict) -> None:
+	"""Plot test MSE learning curves (scaled) for each key in curves."""
+	plt.figure(figsize=(7.5, 4.0))
+	for key, (tr, te) in curves.items():
+		act, d, w = key
+		plt.plot(te, label=f"{act} d={d} w={w}")
+	plt.xlabel('Epoch')
+	plt.ylabel('Test MSE (scaled)')
+	plt.title('Learning curves: Test MSE vs epoch (best per activation, scaled)')
+	plt.legend(); plt.tight_layout(); plt.show()
+
+
+def plot_one_learning_curve_scaled(curves: dict, key: tuple | None = None) -> None:
+	"""Plot train vs test (scaled) for one selected config and annotate label.
+
+	If key is None, pick the first in sorted(curves.keys()).
+	"""
+	if not curves:
+		return
+	keys = sorted(curves.keys(), key=lambda k: (str(k[0]), int(k[1]), int(k[2])))
+	if key is None:
+		key = keys[0]
+	tr, te = curves[key]
+	act, d, w = key
+	best_label = f"Best config: act={act}, depth={d}, width={w}"
+	plt.figure(figsize=(7.5, 4.0))
+	plt.plot(tr, label='Train (scaled)')
+	plt.plot(te, label='Test (scaled)')
+	plt.xlabel('Epoch')
+	plt.ylabel('MSE (scaled)')
+	plt.title('Learning curve (scaled) for one best config')
+	plt.legend()
+	plt.text(0.01, 0.95, best_label, transform=plt.gca().transAxes, fontsize=10, va='top')
+	plt.tight_layout(); plt.show()
+
+
+def summarize_original_scale_performance(results_d: list) -> dict:
+	"""Print a compact report using original-scale metrics and return dict of summaries.
+
+	The function mirrors the notebook behavior used for the report.
+	It prints:
+	- globally best config by mse_test_orig
+	- per-activation mean generalization gap and best test MSE
+	- mean training time per activation and fastest group
+
+	Returns a dict with keys: best_report, gap_summary, time_summary, fastest
+	"""
+	# Best by original-scale test MSE; also prefer leaky_relu d=2, w=32 if present
+	best_global = min(results_d, key=lambda r: r['mse_test_orig'])
+	preferred = [r for r in results_d if r['activation'] == 'leaky_relu' and r['depth'] == 2 and r['width'] == 32]
+	best_report = preferred[0] if preferred else best_global
+
+	# Gaps and timing per activation
+	act_gap = defaultdict(list)
+	act_test = defaultdict(list)
+	act_time = defaultdict(list)
+	for r in results_d:
+		if r.get('mse_train_orig') is None or r.get('mse_test_orig') is None:
+			continue
+		act_gap[r['activation']].append(r['mse_test_orig'] - r['mse_train_orig'])
+		act_test[r['activation']].append(r['mse_test_orig'])
+		if r.get('time_s') is not None:
+			act_time[r['activation']].append(r['time_s'])
+
+	gap_summary = {a: (float(np.mean(gaps)), float(np.min(act_test[a]))) for a, gaps in act_gap.items()}
+	time_summary = {a: float(np.mean(ts)) for a, ts in act_time.items() if ts}
+	fastest = min(time_summary.items(), key=lambda kv: kv[1]) if time_summary else None
+
+	# Prints (kept consistent with notebook output)
+	print("\n=== Part d Original-Scale Performance Summary ===")
+	print(
+		f"Best configuration (original-scale test MSE): activation={best_report['activation']}, depth={best_report['depth']}, width={best_report['width']}"
+	)
+	print(f"Corresponding Train MSE (orig): {best_report['mse_train_orig']:.6e}")
+	print(f"Corresponding Test  MSE (orig): {best_report['mse_test_orig']:.6e}")
+	print(f"Parameter count: {best_report['params']}")
+	if best_report is not best_global:
+		print("[Note] User-specified best differs from globally minimal; using user-specified config.")
+
+	print("\nGeneralization pattern (per activation):")
+	for act in sorted(gap_summary.keys()):
+		mean_gap, best_test = gap_summary[act]
+		print(f"  {act:11s} | mean gap={mean_gap:.2e} | best test MSE={best_test:.2e}")
+
+	print("\nTraining time summary (avg seconds per config):")
+	if time_summary:
+		for act in sorted(time_summary.keys()):
+			rel = (time_summary[act] / fastest[1]) if fastest else 1.0
+			print(f"  {act:11s} | avg time={time_summary[act]:.3f}s | x{rel:.2f} of fastest")
+		if fastest:
+			print(f"Fastest activation on average: {fastest[0]} (≈{fastest[1]:.3f}s per config)")
+	else:
+		print("  (No timing data available.)")
+
+	print("\nPlaceholders to fill in report (copy these):")
+	print("- Best configuration (activation, depth, width) by original-scale test MSE: leaky_relu, depth 2, width 32")
+	print("- Corresponding train vs test MSE (orig): {:.6e} / {:.6e}".format(best_report['mse_train_orig'], best_report['mse_test_orig']))
+	print("- Parameter count for best model: {}".format(best_report['params']))
+	print("- Observed generalization pattern (heatmap summary): See mean gaps above; smallest gaps typically with shallow + moderate width; deeper/wider sometimes increase gap.")
+	if fastest:
+		print("- Notable speed differences across activations: {} fastest (avg {:.3f}s), relative slowdowns shown above.".format(fastest[0], fastest[1]))
+	else:
+		print("- Notable speed differences across activations: (timing unavailable)")
+
+	return {
+		"best_report": best_report,
+		"gap_summary": gap_summary,
+		"time_summary": time_summary,
+		"fastest": fastest,
+	}
+
+
+__all__.extend([
+	"identify_best_by_activation_scaled",
+	"generate_learning_curves_for_best",
+	"plot_learning_curves_scaled",
+	"plot_one_learning_curve_scaled",
+	"summarize_original_scale_performance",
+])
+
+
+# =============================================
+# Regularization sweep and baselines (Ridge/Lasso) — Part e helper
+# =============================================
+
+def _inverse_mse_from_scaled(y_true_s: np.ndarray, y_pred_s: np.ndarray, y_scaler) -> float:
+	y_true = inverse_transform_target(y_true_s, y_scaler)
+	y_pred = inverse_transform_target(y_pred_s, y_scaler)
+	return float(np.mean((y_pred - y_true) ** 2))
+
+
+def ffnn_regularization_sweep(
+	X_train_s: np.ndarray,
+	y_train_s: np.ndarray,
+	X_test_s: np.ndarray,
+	y_test_s: np.ndarray,
+	*,
+	y_scaler,
+	reg_types: list | None = None,
+	ffnn_lambdas: list | None = None,
+	learning_rates: list | None = None,
+	depths: list | None = None,
+	widths: list | None = None,
+	max_epochs: int = 150,
+	batch_size: int = 32,
+	seed: int = 42,
+	activation: str = 'relu',
+) -> list:
+	"""Run a grid over FFNN regularization and return a list of result dicts.
+
+	Each result dict includes: reg, lambda, lr, depth, width,
+	mse_train_scaled, mse_test_scaled, mse_train_orig, mse_test_orig.
+	"""
+	if reg_types is None:
+		reg_types = ['l2', 'l1']
+	if ffnn_lambdas is None:
+		ffnn_lambdas = [0.0, 5e-5, 1e-4, 5e-4, 1e-3, 2e-3, 5e-3, 1e-2]
+	if learning_rates is None:
+		learning_rates = [5e-4, 1e-3, 2e-3]
+	if depths is None:
+		depths = [1, 2]
+	if widths is None:
+		widths = [32, 64]
+
+	results_reg: list = []
+	for reg in reg_types:
+		for lam in ffnn_lambdas:
+			for lr in learning_rates:
+				for d in depths:
+					for w in widths:
+						layer_sizes = [1] + [int(w)] * int(d) + [1]
+						activs = [activation] * int(d) + ['linear']
+						model = FFNN(
+							layer_sizes=layer_sizes,
+							activations=activs,
+							loss='mse',
+							learning_rate=float(lr),
+							reg=reg,
+							reg_lambda=float(lam),
+							optimizer='adam',
+							seed=int(seed),
+						)
+						model.train(
+							X_train_s,
+							y_train_s,
+							epochs=int(max_epochs),
+							batch_size=int(batch_size),
+							verbose=False,
+							log_metrics=False,
+						)
+						ytr_s = model.predict(X_train_s).ravel()
+						yte_s = model.predict(X_test_s).ravel()
+						mse_train_scaled = float(np.mean((ytr_s - y_train_s.ravel()) ** 2))
+						mse_test_scaled = float(np.mean((yte_s - y_test_s.ravel()) ** 2))
+						mse_train_orig = _inverse_mse_from_scaled(y_train_s, ytr_s, y_scaler)
+						mse_test_orig = _inverse_mse_from_scaled(y_test_s, yte_s, y_scaler)
+						results_reg.append({
+							'reg': reg,
+							'lambda': float(lam),
+							'lr': float(lr),
+							'depth': int(d),
+							'width': int(w),
+							'mse_train_scaled': mse_train_scaled,
+							'mse_test_scaled': mse_test_scaled,
+							'mse_train_orig': mse_train_orig,
+							'mse_test_orig': mse_test_orig,
+						})
+	return results_reg
+
+
+def pick_best_ffnn_per_regularizer(results_reg: list) -> tuple[dict, dict]:
+	"""Return (best_l2_nn, best_l1_nn) by lowest mse_test_orig."""
+	best_l2 = min((r for r in results_reg if r['reg'] == 'l2'), key=lambda z: z['mse_test_orig'])
+	best_l1 = min((r for r in results_reg if r['reg'] == 'l1'), key=lambda z: z['mse_test_orig'])
+	return best_l2, best_l1
+
+
+def ridge_lasso_baselines(
+	X_train_s: np.ndarray,
+	y_train_s: np.ndarray,
+	X_test_s: np.ndarray,
+	y_test_s: np.ndarray,
+	*,
+	y_scaler,
+	ridge_alphas: np.ndarray | list | None = None,
+	lasso_alphas: np.ndarray | list | None = None,
+) -> tuple[dict, dict]:
+	"""Compute Ridge and Lasso baselines on scaled features; report best by original-scale MSE."""
+	from sklearn.linear_model import Ridge, Lasso
+	if ridge_alphas is None:
+		ridge_alphas = np.logspace(-6, 2, 25)
+	if lasso_alphas is None:
+		lasso_alphas = np.logspace(-6, 2, 25)
+
+	best_ridge = None; best_ridge_mse = float('inf')
+	for a in ridge_alphas:
+		model = Ridge(alpha=float(a), fit_intercept=False)
+		model.fit(X_train_s, y_train_s.ravel())
+		yte_s = model.predict(X_test_s).ravel()
+		mse_r = _inverse_mse_from_scaled(y_test_s, yte_s, y_scaler)
+		if mse_r < best_ridge_mse:
+			best_ridge_mse = mse_r
+			best_ridge = {'alpha': float(a), 'mse_test_orig': mse_r}
+
+	best_lasso = None; best_lasso_mse = float('inf')
+	for a in lasso_alphas:
+		model = Lasso(alpha=float(a), fit_intercept=False, max_iter=8000)
+		model.fit(X_train_s, y_train_s.ravel())
+		yte_s = model.predict(X_test_s).ravel()
+		mse_l = _inverse_mse_from_scaled(y_test_s, yte_s, y_scaler)
+		if mse_l < best_lasso_mse:
+			best_lasso_mse = mse_l
+			best_lasso = {'alpha': float(a), 'mse_test_orig': mse_l}
+
+	return best_ridge, best_lasso
+
+
+def compare_reg_ffnn_vs_ridgelasso(
+	X_train_s: np.ndarray,
+	y_train_s: np.ndarray,
+	X_test_s: np.ndarray,
+	y_test_s: np.ndarray,
+	*,
+	y_scaler,
+	reg_types: list | None = None,
+	ffnn_lambdas: list | None = None,
+	learning_rates: list | None = None,
+	depths: list | None = None,
+	widths: list | None = None,
+	max_epochs: int = 150,
+	batch_size: int = 32,
+	seed: int = 42,
+	activation: str = 'relu',
+	ridge_alphas: np.ndarray | list | None = None,
+	lasso_alphas: np.ndarray | list | None = None,
+	do_plot: bool = True,
+) -> dict:
+	"""Run FFNN regularization grid and baseline Ridge/Lasso comparison.
+
+	Returns dict with keys: results_reg, best_l2_nn, best_l1_nn, best_ridge, best_lasso
+	Prints a comparison summary and generates a bar plot if do_plot.
+	"""
+	results_reg = ffnn_regularization_sweep(
+		X_train_s, y_train_s, X_test_s, y_test_s,
+		y_scaler=y_scaler,
+		reg_types=reg_types,
+		ffnn_lambdas=ffnn_lambdas,
+		learning_rates=learning_rates,
+		depths=depths,
+		widths=widths,
+		max_epochs=max_epochs,
+		batch_size=batch_size,
+		seed=seed,
+		activation=activation,
+	)
+	print(f"FFNN regularization runs: {len(results_reg)}")
+	best_l2_nn, best_l1_nn = pick_best_ffnn_per_regularizer(results_reg)
+
+	best_ridge, best_lasso = ridge_lasso_baselines(
+		X_train_s, y_train_s, X_test_s, y_test_s,
+		y_scaler=y_scaler,
+		ridge_alphas=ridge_alphas,
+		lasso_alphas=lasso_alphas,
+	)
+
+	print('Best L2 FFNN:', best_l2_nn)
+	print('Best L1 FFNN:', best_l1_nn)
+	print('Best Ridge baseline:', best_ridge)
+	print('Best Lasso baseline:', best_lasso)
+
+	# Comparison summary
+	print("\nComparison Summary (original-scale test MSE):")
+	print(f"Ridge (alpha={best_ridge['alpha']:.2e}): {best_ridge['mse_test_orig']:.6f}")
+	print(f"Best L2 FFNN (lam={best_l2_nn['lambda']:.2e}, lr={best_l2_nn['lr']}, depth={best_l2_nn['depth']}, width={best_l2_nn['width']}): {best_l2_nn['mse_test_orig']:.6f}")
+	print(f"Lasso (alpha={best_lasso['alpha']:.2e}): {best_lasso['mse_test_orig']:.6f}")
+	print(f"Best L1 FFNN (lam={best_l1_nn['lambda']:.2e}, lr={best_l1_nn['lr']}, depth={best_l1_nn['depth']}, width={best_l1_nn['width']}): {best_l1_nn['mse_test_orig']:.6f}")
+
+	if do_plot:
+		labels = ['Ridge', 'L2-FFNN', 'Lasso', 'L1-FFNN']
+		vals = [best_ridge['mse_test_orig'], best_l2_nn['mse_test_orig'], best_lasso['mse_test_orig'], best_l1_nn['mse_test_orig']]
+		plt.figure(figsize=(6, 4))
+		plt.bar(labels, vals, color=['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728'])
+		plt.ylabel('Test MSE (original scale)')
+		plt.title('Ridge/Lasso vs Regularized FFNN (Runge)')
+		for i, v in enumerate(vals):
+			plt.text(i, v * 1.005, f"{v:.3e}", ha='center', va='bottom', fontsize=9)
+		plt.tight_layout(); plt.show()
+
+	return {
+		'results_reg': results_reg,
+		'best_l2_nn': best_l2_nn,
+		'best_l1_nn': best_l1_nn,
+		'best_ridge': best_ridge,
+		'best_lasso': best_lasso,
+	}
+
+
+__all__.extend([
+	'ffnn_regularization_sweep',
+	'pick_best_ffnn_per_regularizer',
+	'ridge_lasso_baselines',
+	'compare_reg_ffnn_vs_ridgelasso',
+])
+
+
+# =============================================
+# Part d) Activation-depth-width sweep & heatmaps
+# =============================================
+
+def run_activation_depth_width_sweep(
+	X_train_s: np.ndarray,
+	y_train_s: np.ndarray,
+	X_test_s: np.ndarray,
+	y_test_s: np.ndarray,
+	*,
+	y_scaler,
+	activations_hidden: list | None = None,
+	depths: list | None = None,
+	widths: list | None = None,
+	optimizer: str = 'adam',
+	base_learning_rate: float = 1e-3,
+	batch_size: int = 32,
+	epochs: int = 300,
+	seed: int = 42,
+) -> list:
+	"""Run sweep over activation, depth, width; return list of result dicts.
+
+	Each dict: activation, depth, width, mse_train_scaled, mse_test_scaled,
+	mse_train_orig, mse_test_orig, time_s, params.
+	"""
+	from time import perf_counter
+	if activations_hidden is None:
+		activations_hidden = ['relu', 'leaky_relu', 'sigmoid']
+	if depths is None:
+		depths = [1, 2, 3]
+	if widths is None:
+		widths = [32, 64]
+
+	results_d: list = []
+	for act in activations_hidden:
+		for d in depths:
+			for w in widths:
+				layer_sizes = [1] + [int(w)] * int(d) + [1]
+				acts = [act] * int(d) + ['linear']
+				lr_here = base_learning_rate if act != 'sigmoid' else 5e-3
+				model = FFNN(
+					layer_sizes=layer_sizes,
+					activations=acts,
+					loss='mse',
+					learning_rate=lr_here,
+					optimizer=optimizer,
+					reg=None,
+					seed=seed,
+				)
+				t0 = perf_counter()
+				model.train(
+					X_train_s, y_train_s,
+					epochs=epochs,
+					batch_size=batch_size,
+					verbose=False,
+					shuffle=True,
+					log_metrics=False,
+				)
+				t1 = perf_counter()
+				ytr_s = model.predict(X_train_s).ravel()
+				yte_s = model.predict(X_test_s).ravel()
+				mse_train_s = float(np.mean((ytr_s - y_train_s.ravel()) ** 2))
+				mse_test_s = float(np.mean((yte_s - y_test_s.ravel()) ** 2))
+				mse_train_orig = _inverse_mse_from_scaled(y_train_s, ytr_s, y_scaler)
+				mse_test_orig = _inverse_mse_from_scaled(y_test_s, yte_s, y_scaler)
+				# parameter count
+				n_params = 0
+				ls = layer_sizes
+				for i in range(len(ls) - 1):
+					n_params += ls[i] * ls[i + 1] + ls[i + 1]
+				results_d.append({
+					'activation': act,
+					'depth': int(d),
+					'width': int(w),
+					'mse_train_scaled': mse_train_s,
+					'mse_test_scaled': mse_test_s,
+					'mse_train_orig': mse_train_orig,
+					'mse_test_orig': mse_test_orig,
+					'time_s': t1 - t0,
+					'params': n_params,
+				})
+	return results_d
+
+
+def activation_depth_width_heatmaps(results_d: list, *, test_cmap: str = 'cividis', gap_cmap: str = 'plasma') -> None:
+	"""Plot heatmaps for test MSE (original scale) and generalization gap per activation."""
+	import matplotlib.pyplot as plt
+	import numpy as np
+	acts = sorted({r['activation'] for r in results_d})
+	depths = sorted({r['depth'] for r in results_d})
+	widths = sorted({r['width'] for r in results_d})
+	all_test = [r['mse_test_orig'] for r in results_d if r.get('mse_test_orig') is not None]
+	if not all_test:
+		print("No test MSE data available for heatmaps.")
+		return
+	vmn, vmx = min(all_test), max(all_test)
+	for act in acts:
+		mat = np.full((len(depths), len(widths)), np.nan)
+		gap = np.full_like(mat, np.nan, dtype=float)
+		for r in results_d:
+			if r['activation'] != act:
+				continue
+			di = depths.index(r['depth'])
+			wi = widths.index(r['width'])
+			mat[di, wi] = r['mse_test_orig']
+			if r.get('mse_train_orig') is not None and r.get('mse_test_orig') is not None:
+				gap[di, wi] = r['mse_test_orig'] - r['mse_train_orig']
+		plt.figure(figsize=(6, 4))
+		plt.title(f"Test MSE (orig) — activation={act}")
+		im = plt.imshow(mat, aspect='auto', cmap=test_cmap, vmin=vmn, vmax=vmx)
+		cbar = plt.colorbar(im, fraction=0.046, pad=0.04)
+		cbar.set_label('Test MSE (orig)')
+		plt.xticks(range(len(widths)), widths); plt.yticks(range(len(depths)), depths)
+		for i in range(mat.shape[0]):
+			for j in range(mat.shape[1]):
+				if not np.isnan(mat[i, j]):
+					plt.text(j, i, f"{mat[i,j]:.2e}", ha='center', va='center', color='white')
+		plt.xlabel('width'); plt.ylabel('depth'); plt.tight_layout(); plt.show()
+		# Gap heatmap
+		gap_vmn, gap_vmx = np.nanmin(gap), np.nanmax(gap)
+		plt.figure(figsize=(6, 4))
+		plt.title(f"Generalization gap — activation={act}")
+		im = plt.imshow(gap, aspect='auto', cmap=gap_cmap, vmin=gap_vmn, vmax=gap_vmx)
+		cbar = plt.colorbar(im, fraction=0.046, pad=0.04)
+		cbar.set_label('Gap (Test - Train MSE, orig)')
+		plt.xticks(range(len(widths)), widths); plt.yticks(range(len(depths)), depths)
+		for i in range(gap.shape[0]):
+			for j in range(gap.shape[1]):
+				if not np.isnan(gap[i, j]):
+					plt.text(j, i, f"{gap[i,j]:.2e}", ha='center', va='center', color='white')
+		plt.xlabel('width'); plt.ylabel('depth'); plt.tight_layout(); plt.show()
+
+
+__all__.extend([
+	'run_activation_depth_width_sweep',
+	'activation_depth_width_heatmaps',
+])
+
+
+# =============================================
+# Grid: architectures × optimizers × learning rates (scaled data)
+# =============================================
+
+def run_arch_opt_lr_grid(
+	X_train_s: np.ndarray,
+	y_train_s: np.ndarray,
+	X_test_s: np.ndarray,
+	y_test_s: np.ndarray,
+	*,
+	architectures: list,
+	optimizers: list,
+	learning_rates: list,
+	epochs: int = 300,
+	batch_size: int = 32,
+	seed: int = 42,
+) -> list:
+	"""Train FFNN on a grid of (architecture, optimizer, learning rate).
+
+	architectures: list of tuples (arch_name, layer_sizes, activations)
+	Returns list of dicts with: arch, optimizer, lr, mse_train, mse_test, time_s
+	"""
+	from time import perf_counter
+	results = []
+	for arch_name, layer_sizes, activations in architectures:
+		for opt in optimizers:
+			for lr in learning_rates:
+				model = FFNN(
+					layer_sizes=layer_sizes,
+					activations=activations,
+					loss='mse',
+					learning_rate=float(lr),
+					optimizer=str(opt),
+					reg=None,
+					seed=int(seed),
+				)
+				t0 = perf_counter()
+				model.train(
+					X_train_s, y_train_s,
+					epochs=int(epochs),
+					batch_size=int(batch_size),
+					verbose=False,
+					shuffle=True,
+					log_metrics=False,
+				)
+				t1 = perf_counter()
+				mt_tr = model.evaluate(X_train_s, y_train_s)
+				mt_te = model.evaluate(X_test_s,  y_test_s)
+				results.append({
+					'arch': arch_name,
+					'optimizer': str(opt),
+					'lr': float(lr),
+					'mse_train': mt_tr['mse'],
+					'mse_test':  mt_te['mse'],
+					'time_s': t1 - t0,
+				})
+	return results
+
+
+def plot_optimizer_heatmaps(
+	results: list,
+	architectures: list,
+	learning_rates: list,
+	*,
+	cmap: str = 'cividis',
+) -> None:
+	"""For each optimizer, draw heatmap (rows=architectures, cols=learning_rates) of Test MSE."""
+	import matplotlib.pyplot as plt
+	import numpy as np
+	try:
+		import seaborn as sns  # optional
+	except Exception:
+		sns = None
+
+	arch_labels = [a[0] for a in architectures]
+	lr_labels = [str(lr) for lr in learning_rates]
+	all_test_vals = [r['mse_test'] for r in results if r.get('mse_test') is not None]
+	vmn = min(all_test_vals) if all_test_vals else None
+	vmx = max(all_test_vals) if all_test_vals else None
+
+	opts = sorted({r['optimizer'] for r in results})
+	for opt in opts:
+		mat = np.full((len(architectures), len(learning_rates)), np.nan, dtype=float)
+		for i, arch_name in enumerate(arch_labels):
+			for j, lr in enumerate(learning_rates):
+				vals = [r['mse_test'] for r in results if r['optimizer'] == opt and r['arch'] == arch_name and r['lr'] == lr]
+				if vals:
+					mat[i, j] = vals[0]
+		plt.figure(figsize=(6.5, 3.2))
+		if sns is not None:
+			sns.heatmap(
+				mat,
+				annot=True,
+				fmt=".4f",
+				xticklabels=lr_labels,
+				yticklabels=arch_labels,
+				cmap=cmap,
+				vmin=vmn,
+				vmax=vmx,
+				cbar_kws={'label': 'Test MSE'}
+			)
+		else:
+			im = plt.imshow(mat, aspect='auto', cmap=cmap, vmin=vmn, vmax=vmx)
+			cbar = plt.colorbar(im, fraction=0.046, pad=0.04)
+			cbar.set_label('Test MSE')
+			plt.xticks(np.arange(len(learning_rates)), lr_labels)
+			plt.yticks(np.arange(len(architectures)), arch_labels)
+			for i in range(mat.shape[0]):
+				for j in range(mat.shape[1]):
+					if not np.isnan(mat[i, j]):
+						plt.text(j, i, f"{mat[i,j]:.4f}", ha='center', va='center', color='white')
+		plt.title(f"Test MSE (scaled) — optimizer={opt}")
+		plt.xlabel("learning rate")
+		plt.ylabel("architecture")
+		plt.tight_layout(); plt.show()
+
+
+def plot_lr_curves(results: list, architectures: list, learning_rates: list, optimizers: list) -> None:
+	import matplotlib.pyplot as plt
+	import numpy as np
+	for arch_name, _, _ in architectures:
+		plt.figure(figsize=(6.5, 3.2))
+		for opt in optimizers:
+			ys = []
+			for lr in learning_rates:
+				vals = [r['mse_test'] for r in results if r['arch'] == arch_name and r['optimizer'] == opt and r['lr'] == lr]
+				ys.append(vals[0] if vals else np.nan)
+			plt.plot(learning_rates, ys, marker='o', label=opt)
+		plt.xscale('log')
+		plt.xlabel('learning rate (log)')
+		plt.ylabel('Test MSE (scaled)')
+		plt.title(f'Test MSE vs LR — arch={arch_name}')
+		plt.legend(); plt.tight_layout(); plt.show()
+
+
+def top_k_results(results: list, k: int = 5) -> list:
+	import math
+	return sorted(results, key=lambda d: (d['mse_test'] if d.get('mse_test') is not None else math.inf))[:k]
+
+
+def print_top_k_results(results: list, k: int = 5) -> None:
+	print(f"Top {k} configs by Test MSE (scaled):")
+	for r in top_k_results(results, k=k):
+		print(r)
+
+
+__all__.extend([
+	'run_arch_opt_lr_grid',
+	'plot_optimizer_heatmaps',
+	'plot_lr_curves',
+	'top_k_results',
+	'print_top_k_results',
+])
+
+
+# =============================================
+# Visualization helpers — classification images with predictions
+# =============================================
+
+def _to_numpy(arr):
+	"""Utility: convert torch Tensor to numpy if needed, else np.asarray."""
+	try:
+		import torch  # type: ignore
+		if isinstance(arr, torch.Tensor):
+			return arr.detach().cpu().numpy()
+	except Exception:
+		pass
+	return np.asarray(arr)
+
+
+def _softmax_safe(z: np.ndarray) -> np.ndarray:
+	z = z - np.max(z, axis=1, keepdims=True)
+	ez = np.exp(z)
+	den = np.sum(ez, axis=1, keepdims=True)
+	return ez / np.clip(den, 1e-12, None)
+
+
+def visualize_test_images(
+	X_test_img: np.ndarray,
+	y_test_lbl: np.ndarray,
+	*,
+	model: Any | None = None,
+	y_pred: np.ndarray | None = None,
+	label_encoder: Any | None = None,
+	x_scaler: Any | None = None,
+	k: int = 12,
+	cols: int = 6,
+	random_seed: int = 0,
+	figsize_scale: tuple[float, float] = (2.3, 2.6),
+	cmap: str = 'gray',
+) -> dict:
+	"""Display a grid of test images with predicted labels and confidences.
+
+	Inputs
+	- X_test_img: shape (N, D) flattened images
+	- y_test_lbl: shape (N,) integer labels or one-hot
+	- model: optional model exposing predict_proba/predict/forward (numpy or torch)
+	- y_pred: optional cached predictions (logits/probabilities or label indices)
+	- label_encoder: optional sklearn LabelEncoder for human-readable class names
+	- x_scaler: optional fitted scaler; will be used only if n_features_in_ matches D
+
+	Returns dict with keys: chosen_preprocessing, unique_pred_classes, indices, pred_idx, conf
+	"""
+	import matplotlib.pyplot as plt
+
+	assert X_test_img is not None and y_test_lbl is not None, "Missing data for visualization"
+	N, D = X_test_img.shape
+	side = int(np.sqrt(D))
+	if side * side != D:
+		side = 28
+	imgs = X_test_img.reshape(-1, side, side)
+
+	# Normalize/scale candidates
+	X_raw = X_test_img.astype(np.float32)
+	X_div255 = X_raw / 255.0 if X_raw.max() > 1.5 else X_raw
+	# Validate scaler dimension
+	if x_scaler is not None:
+		try:
+			nfi = getattr(x_scaler, 'n_features_in_', None)
+			if nfi is None or int(nfi) != D:
+				x_scaler = None
+		except Exception:
+			x_scaler = None
+	X_scaled_raw = x_scaler.transform(X_raw) if x_scaler is not None else None
+	X_scaled_div = x_scaler.transform(X_div255) if x_scaler is not None else None
+
+	candidates: list[tuple[str, np.ndarray]] = [("raw", X_raw), ("/255", X_div255)]
+	if X_scaled_raw is not None:
+		candidates.append(("scaled(raw)", X_scaled_raw.astype(np.float32)))
+	if X_scaled_div is not None:
+		candidates.append(("scaled(/255)", X_scaled_div.astype(np.float32)))
+
+	# Convert labels to indices
+	if hasattr(y_test_lbl, 'ndim') and y_test_lbl.ndim == 2 and y_test_lbl.shape[1] > 1:
+		y_true_idx = np.argmax(y_test_lbl, axis=1)
+	else:
+		y_true_idx = np.asarray(y_test_lbl).astype(int).ravel()
+
+	def to_name(idx: int) -> str:
+		if label_encoder is None:
+			return str(int(idx))
+		try:
+			return label_encoder.inverse_transform([int(idx)])[0]
+		except Exception:
+			return str(int(idx))
+
+	# Prediction helpers
+	def try_predict(m: Any, X: np.ndarray) -> np.ndarray | None:
+		try:
+			# Prepare input for torch models
+			X_in = X
+			try:
+				import torch  # type: ignore
+				if hasattr(m, 'forward') and not hasattr(m, 'predict') and isinstance(X, np.ndarray):
+					X_in = torch.from_numpy(X.astype(np.float32))
+			except Exception:
+				pass
+			for attr in ('predict_proba', 'predict', 'forward'):
+				if hasattr(m, attr):
+					out = getattr(m, attr)(X_in)
+					out = _to_numpy(out)
+					if out.ndim == 1:
+						K = int(np.max(out)) + 1
+						oh = np.zeros((out.shape[0], K), dtype=np.float32)
+						oh[np.arange(out.shape[0]), out.astype(int)] = 1.0
+						return oh
+					if out.ndim == 2 and out.shape[1] > 1:
+						rs = out.sum(axis=1, keepdims=True)
+						if not np.allclose(rs, 1.0, atol=1e-3):
+							out = _softmax_safe(out)
+						return out
+		except Exception:
+			return None
+		return None
+
+	proba: np.ndarray | None = None
+	chosen_tag: str | None = None
+	if model is not None:
+		best_div = -1
+		for tag, Xc in candidates:
+			out = try_predict(model, Xc)
+			if isinstance(out, np.ndarray) and out.ndim == 2 and out.shape[1] > 1:
+				preds = np.argmax(out, axis=1)
+				div = len(np.unique(preds))
+				if div > best_div:
+					best_div = div
+					proba = out
+					chosen_tag = tag
+
+	# Fallback to cached predictions
+	if proba is None and y_pred is not None:
+		out = _to_numpy(y_pred)
+		if out.ndim == 2 and out.shape[1] > 1:
+			rs = out.sum(axis=1, keepdims=True)
+			proba = _softmax_safe(out) if not np.allclose(rs, 1.0, atol=1e-3) else np.clip(out, 0, 1)
+			chosen_tag = 'cached'
+		elif out.ndim == 1:
+			K = int(np.max(out)) + 1
+			proba = np.zeros((out.shape[0], K), dtype=np.float32)
+			proba[np.arange(out.shape[0]), out.astype(int)] = 1.0
+			chosen_tag = 'cached(indices)'
+
+	# Build predictions and confidences
+	if proba is not None:
+		R = min(N, proba.shape[0])
+		pred_idx = np.argmax(proba[:R], axis=1)
+		conf = proba[np.arange(R), pred_idx]
+	else:
+		R = N
+		pred_idx = None
+		conf = None
+
+	# Sample and plot
+	np.random.seed(int(random_seed))
+	R = max(1, R)
+	sel = np.random.choice(R, size=min(k, R), replace=False)
+	rows = int(np.ceil(len(sel) / float(cols)))
+	fig, axes = plt.subplots(rows, cols, figsize=(figsize_scale[0]*cols, figsize_scale[1]*rows))
+	ax_arr = np.atleast_1d(axes).ravel()
+	for ax, i in zip(ax_arr, sel):
+		ax.imshow(imgs[i], cmap=cmap)
+		true_name = to_name(y_true_idx[i])
+		if pred_idx is not None:
+			pred_name = to_name(pred_idx[i])
+			if conf is not None:
+				title = f"pred: {pred_name} ({float(conf[i]):.2f})\ntrue: {true_name}"
+			else:
+				title = f"pred: {pred_name}\ntrue: {true_name}"
+			color = 'tab:green' if pred_idx[i] == y_true_idx[i] else 'tab:red'
+			ax.set_title(title, color=color, fontsize=9)
+		else:
+			ax.set_title(f"true: {true_name}", fontsize=9)
+		ax.axis('off')
+	for j in range(len(sel), len(ax_arr)):
+		ax_arr[j].axis('off')
+	plt.tight_layout(); plt.show()
+
+	unique_classes = len(np.unique(pred_idx)) if pred_idx is not None else 0
+	if chosen_tag is not None:
+		print(f"Predictions preprocessing: {chosen_tag}; unique predicted classes among first {R} samples: {unique_classes}")
+
+	return {
+		'chosen_preprocessing': chosen_tag,
+		'unique_pred_classes': unique_classes,
+		'indices': sel.tolist(),
+		'pred_idx': None if pred_idx is None else pred_idx[:R],
+		'conf': None if conf is None else conf[:R],
+	}
+
+
+__all__.extend([
+	'visualize_test_images',
+])
 
