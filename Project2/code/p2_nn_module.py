@@ -1,20 +1,20 @@
-"""
-Reusable regression utilities and gradient descent routines for Project 2.
+"""Project 2 helper module.
 
-This consolidates functions and classes originally developed in Project 1 so
-they can be imported in `project2.ipynb` as baselines/benchmarks for neural nets.
+Consolidates small regression helpers and neural network utilities that first
+appeared in notebooks. Putting them here keeps notebooks lighter and lets you
+reproduce experiments without copy/paste.
 
-Contents
-- Feature utilities: polynomial_features
-- Closed-form regression: OLS_parameters, Ridge_parameters
-- Metrics: MSE, R2
-- Optimizers and training loops:
-  * gradient: analytic gradient for OLS/Ridge
-  * Optimizer: plain GD, Momentum, RMSProp, Adam
-  * fit_full_batch: full-batch GD
-  * fit_sgd: stochastic (mini-batch) GD with replacement
+Highlights:
+* Polynomial feature expansion.
+* Closed-form OLS / Ridge and simple metrics (MSE, R2).
+* A minimal gradient descent optimizer (plain, momentum, RMSProp, Adam).
+* Batch and mini-batch training loops for linear models.
+* A NumPy feed-forward network plus an optional PyTorch MLP for parity checks.
+* Helpers for Runge function experiments, regularization sweeps, plotting,
+	and Fashion-MNIST classification.
 
-All functions are NumPy-based and do not depend on scikit-learn for fitting.
+Bias terms are left unregularized by design. Numerical routines favor clarity
+over robustness—swap in pseudo-inverse or add conditioning tweaks if needed.
 """
 
 from __future__ import annotations
@@ -28,29 +28,31 @@ import numpy as np
 # Feature utilities
 # -------------------------------
 
-def OLS_parameters(X, y):
-    return np.linalg.inv(X.T @ X) @ X.T @ y
-
-# Create a feature matrix X for the features. Here we use polynomial features up to degree 5, plus an intercept column of ones.
-def polynomial_features(x, p):
-    n = len(x)
-    X = np.zeros((n, p + 1))
-    for i in range(p + 1):
-        X[:, i] = x**i
-    return X
-
 def runge_function(x):
-    return 1 / (1 + 25 * x**2)
+	"""Backward-compatible alias for the Runge function.
+
+	Delegates to the canonical typed implementation `runge` defined later.
+	"""
+	return runge(np.asarray(x))
 
 def polynomial_features(x: np.ndarray, degree: int) -> np.ndarray:
-	"""Construct polynomial features up to given degree (inclusive).
+	"""Return matrix of powers of ``x`` from 0 up to ``degree``.
 
-	Inputs
-	- x: shape (n,) or (n,)
-	- degree: non-negative integer
+	Parameters
+	----------
+	x : array-like, shape (n,)
+		Input vector (flattened).
+	degree : int
+		Highest polynomial power.
 
-	Output
-	- X: shape (n, degree+1) with columns [x^0, x^1, ..., x^degree]
+	Returns
+	-------
+	X : ndarray, shape (n, degree+1)
+		Columns = ``x**0, x**1, ..., x**degree``.
+
+	Notes
+	-----
+	Simple helper; no scaling or numerical safeguards for high degrees.
 	"""
 	x = np.asarray(x).reshape(-1)
 	n = x.shape[0]
@@ -65,20 +67,16 @@ def polynomial_features(x: np.ndarray, degree: int) -> np.ndarray:
 # -------------------------------
 
 def OLS_parameters(X: np.ndarray, y: np.ndarray) -> np.ndarray:
-	"""Closed-form OLS: (X^T X)^(-1) X^T y
+	"""Compute OLS coefficients with the normal equation.
 
-	Note: Mirrors the Project 1 implementation which used np.linalg.inv.
-	For improved numerical stability in new work, consider np.linalg.pinv.
+	Uses ``np.linalg.inv`` (kept for transparency). Prefer ``np.linalg.pinv`` if
+	``X`` is close to singular.
 	"""
 	return np.linalg.inv(X.T @ X) @ (X.T @ y)
 
 
 def Ridge_parameters(X: np.ndarray, y: np.ndarray, lam: float = 1.0) -> np.ndarray:
-	"""Closed-form Ridge: (X^T X + lam I)^(-1) X^T y
-
-	Does NOT regularize the bias term (first coefficient). This matches common
-	practice; set lam_bias=True to also regularize bias if desired.
-	"""
+	"""Compute Ridge regression coefficients excluding the bias from penalty."""
 	n_features = X.shape[1]
 	I = np.eye(n_features)
 	# Do not regularize intercept (bias) term in column 0
@@ -91,7 +89,7 @@ def Ridge_parameters(X: np.ndarray, y: np.ndarray, lam: float = 1.0) -> np.ndarr
 # -------------------------------
 
 def runge(x: np.ndarray) -> np.ndarray:
-	"""Runge function used in Project 1 synthetic data."""
+	"""Runge function ``1/(1+25x^2)`` used for interpolation stress tests."""
 	x = np.asarray(x)
 	return 1.0 / (1.0 + 25.0 * x**2)
 
@@ -122,11 +120,7 @@ def gradient(
 	lam: float = 0.0,
 	ridge: bool = False,
 ) -> np.ndarray:
-	"""Gradient of MSE loss for linear model with optional Ridge.
-
-	Loss(OLS)  = (1/n) ||y - X theta||^2
-	Loss(Ridge)= (1/n) ||y - X theta||^2 + lam * ||theta||^2 (no bias reg)
-	"""
+	"""Return gradient of MSE (optionally with Ridge term, skipping bias)."""
 	n = X.shape[0]
 	residual = X @ theta - y
 	g = (2.0 / n) * (X.T @ residual)
@@ -139,7 +133,7 @@ def gradient(
 
 @dataclass
 class Optimizer:
-	"""Simple optimizer supporting 'gd', 'momentum', 'rmsprop', 'adam'."""
+	"""Minimal optimizer wrapper: 'gd', 'momentum', 'rmsprop', or 'adam'."""
 
 	name: str = "gd"
 	eta: float = 1e-2
@@ -214,9 +208,9 @@ def fit_full_batch(
 	init_theta: Optional[np.ndarray] = None,
 	seed: Optional[int] = None,
 ) -> Dict[str, object]:
-	"""Full-batch gradient descent training loop.
+	"""Full-batch gradient descent; stops early on tiny parameter change.
 
-	Returns a dict with keys: theta, mse_train, mse_test, epoch, history
+	Returns dict: ``theta, mse_train, mse_test, epoch, history``.
 	"""
 	n_features = X_train.shape[1]
 	theta = _init_theta(n_features, seed) if init_theta is None else init_theta.copy()
@@ -261,12 +255,9 @@ def fit_sgd(
 	init_theta: Optional[np.ndarray] = None,
 	seed: Optional[int] = None,
 ) -> Dict[str, object]:
-	"""Stochastic (mini-batch) gradient descent training loop.
+	"""Mini-batch gradient descent; default sampling uses replacement.
 
-	Draws each mini-batch independently with replacement by default to match
-	the Project 1 variant noted in comments.
-
-	Returns a dict with keys: theta, mse_train, mse_test, epoch, history
+	Returns same keys as :func:`fit_full_batch`.
 	"""
 	rng = np.random.default_rng(seed)
 	n_samples, n_features = X_train.shape
@@ -337,7 +328,10 @@ OptName = Literal['gd', 'rmsprop', 'adam']
 
 
 def one_hot(y: np.ndarray, num_classes: int) -> np.ndarray:
-	"""One-hot encode integer labels of shape (n,) into (n, num_classes)."""
+	"""One-hot encode labels into a dense indicator matrix.
+
+	Assumes labels are integers in ``[0, num_classes-1]``.
+	"""
 	y = y.astype(int).ravel()
 	out = np.zeros((y.size, num_classes), dtype=float)
 	out[np.arange(y.size), y] = 1.0
@@ -345,32 +339,22 @@ def one_hot(y: np.ndarray, num_classes: int) -> np.ndarray:
 
 
 class FFNN:
-	"""
-	A simple feed-forward neural network implemented in NumPy.
+	"""Lightweight fully-connected neural network (NumPy only).
 
-	Essentials:
-	- X shape: (n_samples, n_features)
-	- y_hat shape: (n_samples, n_outputs)
-	- layer_sizes: [n_features, h1, ..., n_outputs]
-	- activations per layer: len == len(layer_sizes) - 1
-	  Allowed: 'sigmoid', 'relu', 'leaky_relu', 'linear', 'softmax'
+	You pass ``layer_sizes`` (including input and output) and one activation per
+	hidden/output layer. Supported: ``sigmoid``, ``relu``, ``leaky_relu``,
+	``linear``, ``softmax``.
 
 	Loss:
-	- 'mse': regression; output activation typically 'linear' or 'sigmoid'
-	- 'softmax': categorical cross-entropy with softmax output (expects one-hot y)
+	- ``mse`` for regression
+	- ``softmax`` for multi-class classification with one-hot targets
 
-	Regularization:
-	- reg in {None, 'l1', 'l2'} with strength reg_lambda >= 0 on weights (biases not regularized).
+	Regularization is optional (L1/L2 on weights; biases are not penalized).
 
-	Optimizer:
-	- 'gd' (plain), 'rmsprop', 'adam' with typical hyperparameters.
+	Optimizers: vanilla GD, RMSProp, Adam. Implementations are minimal on
+	purpose—clear and good enough for small experiments.
 
-	Metrics:
-	- MSE and Accuracy (Accuracy only for softmax classification).
-
-	Initialization:
-	- Weights are drawn from a small normal distribution (0.01 * N(0,1)), biases are zeros,
-	  matching the course's simple initialization approach.
+	Weights use simple fan-in Gaussian scaling; biases start at zero.
 	"""
 
 	def __init__(
@@ -428,9 +412,7 @@ class FFNN:
 		self.weights.clear(); self.biases.clear()
 		for i in range(len(self.layer_sizes) - 1):
 			n_in, n_out = self.layer_sizes[i], self.layer_sizes[i + 1]
-			# Simple variance-aware scaling by fan-in (course-friendly):
-			# - For ReLU/LeakyReLU: std = sqrt(2 / n_in)
-			# - For Sigmoid/Linear/Softmax: std = 1 / sqrt(n_in)
+			# Fan-in scaling (He for ReLU family, gentler 1/sqrt for others).
 			act_name = self.activations_conf[i]
 			if act_name in ('relu', 'leaky_relu'):
 				std = np.sqrt(2.0 / max(1, n_in))
@@ -489,6 +471,7 @@ class FFNN:
 
 	# ---------- Forward / Loss ----------
 	def forward(self, X: np.ndarray) -> np.ndarray:
+		"""Compute outputs and cache intermediates for backprop."""
 		self.zs = []
 		self.as_ = [X]
 		a = X
@@ -566,6 +549,7 @@ class FFNN:
 			raise ValueError(f"Unknown optimizer: {self.optimizer}")
 
 	def backward(self, y_true: np.ndarray) -> None:
+		"""Backpropagate one batch and update parameters in place."""
 		assert len(self.as_) >= 2, "Call forward(X) before backward()."
 		m = y_true.shape[0]
 		L = len(self.weights)
@@ -647,7 +631,7 @@ class FFNN:
 		shuffle: bool = True,
 		log_metrics: bool = True,
 	) -> Dict[str, List[Any]]:
-		"""Train the network and optionally return history dict."""
+		"""Train for ``epochs``; return metric history if ``verbose`` logging used."""
 		n = X.shape[0]
 		if batch_size is None or batch_size <= 0 or batch_size >= n:
 			batch_size = n
@@ -682,6 +666,7 @@ class FFNN:
 
 	# ---------- Predictions ----------
 	def predict(self, X: np.ndarray) -> np.ndarray:
+		"""Return discrete class indices (softmax) or raw outputs."""
 		y_pred = self.forward(X)
 		act_L = self.activations_conf[-1]
 		if self.loss_name == 'softmax' and act_L == 'softmax':
@@ -706,21 +691,13 @@ __all__.extend([
 
 # Utilities that don't require torch
 def inverse_transform_target(y_scaled: np.ndarray, y_scaler) -> np.ndarray:
-	"""Inverse-transform a scaled target using a fitted scaler with inverse_transform.
-
-	Parameters
-	- y_scaled: array-like, shape (n,) or (n,1)
-	- y_scaler: object exposing inverse_transform with shape (n,1)
-
-	Returns
-	- y: shape (n,)
-	"""
+	"""Inverse-transform target values and return a flat 1-D array."""
 	arr = np.asarray(y_scaled).reshape(-1, 1)
 	return y_scaler.inverse_transform(arr).ravel()
 
 
 def train_pt_mlp_regression(*args, **kwargs):
-	"""Placeholder when PyTorch isn't available; real implementation loaded if torch is installed."""
+	"""Raise ``ImportError`` when PyTorch isn't installed."""
 	raise ImportError("PyTorch is not available; install torch to use train_pt_mlp_regression.")
 
 try:
@@ -732,16 +709,12 @@ except ImportError:  # torch optional; PTMLP only available if installed
 
 if torch is not None:
 	class PTMLP(nn.Module):
-		"""Two-hidden-layer MLP matching FFNN initialization & activations.
+		"""Small PyTorch MLP to sanity-check NumPy FFNN behavior.
 
-		Architecture (default): [in_features, h1, h2, out_features]
-		Hidden activation selectable: sigmoid / relu / leaky_relu
-		Output: Linear for regression (MSE)
+		Shape: ``[in_features, h1, h2, out_features]``. Hidden activation can
+		be sigmoid/relu/leaky_relu. Output layer stays linear for MSE.
 
-		Initialization (course-friendly fan-in scaling):
-		- For ReLU/LeakyReLU: std = sqrt(2 / fan_in)
-		- Otherwise (sigmoid/linear): std = 1 / sqrt(fan_in)
-		Biases initialized to zero.
+		Uses fan-in scaling similar to the NumPy version; biases are zeros.
 		"""
 		def __init__(self, in_features=1, h1=100, h2=100, out_features=1, activation: str = 'sigmoid'):
 			super().__init__()
@@ -797,19 +770,10 @@ if torch is not None:
 		print_every: int = 100,
 		y_scaler: Optional[object] = None,
 	) -> Dict[str, Any]:
-		"""Train a PTMLP regressor on scaled data and return metrics and predictions.
+		"""Train a small PyTorch MLP on scaled data and report MSEs.
 
-		This function mirrors the training loop used in the notebook cell but wraps it
-		into a reusable API. It computes scaled MSE by default and, if provided a
-		`y_scaler` with inverse_transform, also reports original-scale MSE.
-
-		Returns a dictionary with keys:
-		- model: trained PTMLP model
-		- y_pred_train, y_pred_test: predictions on scaled data (numpy arrays)
-		- mse_train_scaled, mse_test_scaled: float MSE on scaled data
-		- mse_train_original, mse_test_original: floats if y_scaler given, else None
-		- y_train_orig, y_test_orig, y_pred_train_orig, y_pred_test_orig: arrays if y_scaler given
-		- history: list of (epoch, mse_train_scaled, mse_test_scaled) every print_every epochs
+		If ``y_scaler`` is provided, also computes original-scale MSE. The
+		``history`` list stores periodic (epoch, train_mse_scaled, test_mse_scaled).
 		"""
 		assert torch is not None and nn is not None, "PyTorch not available"
 		# Device and seeds
@@ -930,11 +894,7 @@ import matplotlib.pyplot as plt
 
 
 def identify_best_by_activation_scaled(results_d: list) -> dict:
-	"""Return dict activation -> best result by lowest mse_test_scaled.
-
-	Each entry in results_d is expected to be a dict containing at least:
-	{ 'activation', 'depth', 'width', 'mse_test_scaled' }
-	"""
+	"""Map each activation to the config with the lowest scaled test MSE."""
 	best_by_act = {}
 	acts = sorted({r['activation'] for r in results_d})
 	for act in acts:
@@ -957,10 +917,9 @@ def generate_learning_curves_for_best(
 	batch_size: int = 32,
 	learning_rate: float = 1e-3,
 ) -> dict:
-	"""Retrain the best-by-activation configs and return learning curves (scaled MSE).
+	"""Retrain the per-activation best and collect (train,test) MSE curves.
 
-	Returns a dict: {(activation, depth, width): (train_curve, test_curve)}
-	where curves are np.ndarray of shape (epochs,).
+	Returns: ``{(activation, depth, width): (train_curve, test_curve)}``.
 	"""
 	best_by_act = identify_best_by_activation_scaled(results_d)
 	curves = {}
@@ -1002,7 +961,7 @@ def generate_learning_curves_for_best(
 
 
 def plot_learning_curves_scaled(curves: dict) -> None:
-	"""Plot test MSE learning curves (scaled) for each key in curves."""
+	"""Plot test MSE (scaled) vs epoch for each stored configuration."""
 	plt.figure(figsize=(7.5, 4.0))
 	for key, (tr, te) in curves.items():
 		act, d, w = key
@@ -1014,10 +973,7 @@ def plot_learning_curves_scaled(curves: dict) -> None:
 
 
 def plot_one_learning_curve_scaled(curves: dict, key: tuple | None = None) -> None:
-	"""Plot train vs test (scaled) for one selected config and annotate label.
-
-	If key is None, pick the first in sorted(curves.keys()).
-	"""
+	"""Plot train/test (scaled) for one config (first by default)."""
 	if not curves:
 		return
 	keys = sorted(curves.keys(), key=lambda k: (str(k[0]), int(k[1]), int(k[2])))
@@ -1038,16 +994,7 @@ def plot_one_learning_curve_scaled(curves: dict, key: tuple | None = None) -> No
 
 
 def summarize_original_scale_performance(results_d: list) -> dict:
-	"""Print a compact report using original-scale metrics and return dict of summaries.
-
-	The function mirrors the notebook behavior used for the report.
-	It prints:
-	- globally best config by mse_test_orig
-	- per-activation mean generalization gap and best test MSE
-	- mean training time per activation and fastest group
-
-	Returns a dict with keys: best_report, gap_summary, time_summary, fastest
-	"""
+	"""Print a short original-scale report and return summary dicts."""
 	# Best by original-scale test MSE; also prefer leaky_relu d=2, w=32 if present
 	best_global = min(results_d, key=lambda r: r['mse_test_orig'])
 	preferred = [r for r in results_d if r['activation'] == 'leaky_relu' and r['depth'] == 2 and r['width'] == 32]
@@ -1149,11 +1096,7 @@ def ffnn_regularization_sweep(
 	seed: int = 42,
 	activation: str = 'relu',
 ) -> list:
-	"""Run a grid over FFNN regularization and return a list of result dicts.
-
-	Each result dict includes: reg, lambda, lr, depth, width,
-	mse_train_scaled, mse_test_scaled, mse_train_orig, mse_test_orig.
-	"""
+	"""Grid over FFNN regularization; return per-config metrics and settings."""
 	if reg_types is None:
 		reg_types = ['l2', 'l1']
 	if ffnn_lambdas is None:
@@ -1212,7 +1155,7 @@ def ffnn_regularization_sweep(
 
 
 def pick_best_ffnn_per_regularizer(results_reg: list) -> tuple[dict, dict]:
-	"""Return (best_l2_nn, best_l1_nn) by lowest mse_test_orig."""
+	"""Return best L2 and best L1 configs by original-scale test MSE."""
 	best_l2 = min((r for r in results_reg if r['reg'] == 'l2'), key=lambda z: z['mse_test_orig'])
 	best_l1 = min((r for r in results_reg if r['reg'] == 'l1'), key=lambda z: z['mse_test_orig'])
 	return best_l2, best_l1
@@ -1228,7 +1171,7 @@ def ridge_lasso_baselines(
 	ridge_alphas: np.ndarray | list | None = None,
 	lasso_alphas: np.ndarray | list | None = None,
 ) -> tuple[dict, dict]:
-	"""Compute Ridge and Lasso baselines on scaled features; report best by original-scale MSE."""
+	"""Fit Ridge/Lasso on scaled data and return the best original-scale MSE."""
 	from sklearn.linear_model import Ridge, Lasso
 	if ridge_alphas is None:
 		ridge_alphas = np.logspace(-6, 2, 25)
@@ -1278,11 +1221,7 @@ def compare_reg_ffnn_vs_ridgelasso(
 	lasso_alphas: np.ndarray | list | None = None,
 	do_plot: bool = True,
 ) -> dict:
-	"""Run FFNN regularization grid and baseline Ridge/Lasso comparison.
-
-	Returns dict with keys: results_reg, best_l2_nn, best_l1_nn, best_ridge, best_lasso
-	Prints a comparison summary and generates a bar plot if do_plot.
-	"""
+	"""Compare regularized FFNNs against Ridge/Lasso; optionally plot a bar chart."""
 	results_reg = ffnn_regularization_sweep(
 		X_train_s, y_train_s, X_test_s, y_test_s,
 		y_scaler=y_scaler,
@@ -1366,11 +1305,7 @@ def run_activation_depth_width_sweep(
 	epochs: int = 300,
 	seed: int = 42,
 ) -> list:
-	"""Run sweep over activation, depth, width; return list of result dicts.
-
-	Each dict: activation, depth, width, mse_train_scaled, mse_test_scaled,
-	mse_train_orig, mse_test_orig, time_s, params.
-	"""
+	"""Sweep activation × depth × width and collect metrics, time, and params."""
 	from time import perf_counter
 	if activations_hidden is None:
 		activations_hidden = ['relu', 'leaky_relu', 'sigmoid']
@@ -1431,7 +1366,7 @@ def run_activation_depth_width_sweep(
 
 
 def activation_depth_width_heatmaps(results_d: list, *, test_cmap: str = 'cividis', gap_cmap: str = 'plasma') -> None:
-	"""Plot heatmaps for test MSE (original scale) and generalization gap per activation."""
+	"""Heatmaps for original-scale test MSE and generalization gap per activation."""
 	import matplotlib.pyplot as plt
 	import numpy as np
 	acts = sorted({r['activation'] for r in results_d})
@@ -1502,11 +1437,7 @@ def run_arch_opt_lr_grid(
 	batch_size: int = 32,
 	seed: int = 42,
 ) -> list:
-	"""Train FFNN on a grid of (architecture, optimizer, learning rate).
-
-	architectures: list of tuples (arch_name, layer_sizes, activations)
-	Returns list of dicts with: arch, optimizer, lr, mse_train, mse_test, time_s
-	"""
+	"""Grid over architectures × optimizers × learning rates; collect results."""
 	from time import perf_counter
 	results = []
 	for arch_name, layer_sizes, activations in architectures:
@@ -1551,7 +1482,7 @@ def plot_optimizer_heatmaps(
 	*,
 	cmap: str = 'cividis',
 ) -> None:
-	"""For each optimizer, draw heatmap (rows=architectures, cols=learning_rates) of Test MSE."""
+	"""Heatmap of test MSE by architecture (rows) vs learning rate (cols) per optimizer."""
 	import matplotlib.pyplot as plt
 	import numpy as np
 	try:
@@ -1645,14 +1576,15 @@ __all__.extend([
 # =============================================
 
 def _to_numpy(arr):
-	"""Utility: convert torch Tensor to numpy if needed, else np.asarray."""
+	"""Convert torch tensor to NumPy if needed; otherwise ``np.asarray``."""
+	arr_np = None
 	try:
 		import torch  # type: ignore
-		if isinstance(arr, torch.Tensor):
-			return arr.detach().cpu().numpy()
-	except Exception:
-		pass
-	return np.asarray(arr)
+		if 'torch' in globals() and torch is not None and isinstance(arr, torch.Tensor):
+			arr_np = arr.detach().cpu().numpy()
+	except ImportError:
+		arr_np = None
+	return np.asarray(arr) if arr_np is None else arr_np
 
 
 def _softmax_safe(z: np.ndarray) -> np.ndarray:
@@ -1676,17 +1608,10 @@ def visualize_test_images(
 	figsize_scale: tuple[float, float] = (2.3, 2.6),
 	cmap: str = 'gray',
 ) -> dict:
-	"""Display a grid of test images with predicted labels and confidences.
+	"""Show a grid of random test images with predicted label & confidence.
 
-	Inputs
-	- X_test_img: shape (N, D) flattened images
-	- y_test_lbl: shape (N,) integer labels or one-hot
-	- model: optional model exposing predict_proba/predict/forward (numpy or torch)
-	- y_pred: optional cached predictions (logits/probabilities or label indices)
-	- label_encoder: optional sklearn LabelEncoder for human-readable class names
-	- x_scaler: optional fitted scaler; will be used only if n_features_in_ matches D
-
-	Returns dict with keys: chosen_preprocessing, unique_pred_classes, indices, pred_idx, conf
+	Returns bookkeeping info: chosen preprocessing tag, class diversity, sample
+	indices, predicted indices, and per-sample confidences (if available).
 	"""
 	import matplotlib.pyplot as plt
 
@@ -1859,15 +1784,7 @@ def run_fashion_mnist_softmax(
 	stratify: bool = True,
 	return_data: bool = True,
 ) -> dict:
-	"""Train a softmax FFNN on Fashion-MNIST (or provided X,y) and return metrics.
-
-	If X and y are None, fetch Fashion-MNIST via sklearn.datasets.fetch_openml.
-
-	Returns a dict with keys:
-	- model, metrics_train, metrics_test
-	- X_train, X_test, y_train, y_test, Y_train, Y_test, n_features, n_classes
-	- label_encoder
-	"""
+	"""Fetch (if needed) Fashion-MNIST, train a softmax FFNN, and return metrics & splits."""
 	from sklearn.model_selection import train_test_split
 	from sklearn.datasets import fetch_openml
 	from sklearn.preprocessing import LabelEncoder
@@ -1967,13 +1884,7 @@ def confusion_matrix_plot(
 	normalize: str | None = 'true',
 	annotate: str | None = 'auto',  # 'auto' | 'percent' | 'count' | None
 ) -> dict:
-	"""Compute and plot a confusion matrix using sklearn; return metrics.
-
-	- model: exposes predict or predict_proba/forward (numpy or torch)
-	- X: features; y_true: integer labels or one-hot
-	- label_encoder: optional for class names
-	Returns a dict with cm (numpy array), accuracy (float), and labels list.
-	"""
+	"""Plot a confusion matrix (optionally normalized) and return its raw data + accuracy."""
 	from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, accuracy_score
 	import matplotlib.pyplot as plt
 
@@ -2075,4 +1986,7 @@ def confusion_matrix_plot(
 	return {'cm': cm, 'cm_norm': cm_norm, 'accuracy': float(acc), 'labels': labels}
 
 __all__.extend(['confusion_matrix_plot'])
+
+# Final de-duplication of exports (preserve order of first occurrence)
+__all__ = list(dict.fromkeys(__all__))
 
