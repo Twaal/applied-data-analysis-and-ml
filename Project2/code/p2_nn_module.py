@@ -1839,3 +1839,240 @@ __all__.extend([
 	'visualize_test_images',
 ])
 
+
+# =============================================
+# Fashion-MNIST softmax training helper
+# =============================================
+
+def run_fashion_mnist_softmax(
+	X: np.ndarray | None = None,
+	y: np.ndarray | None = None,
+	*,
+	arch: tuple[int, ...] = (128, 64),
+	lr: float = 1e-2,
+	epochs: int = 10,
+	batch_size: int = 128,
+	optimizer: str = 'adam',
+	seed: int = 42,
+	test_size: float = 0.2,
+	random_state: int = 42,
+	stratify: bool = True,
+	return_data: bool = True,
+) -> dict:
+	"""Train a softmax FFNN on Fashion-MNIST (or provided X,y) and return metrics.
+
+	If X and y are None, fetch Fashion-MNIST via sklearn.datasets.fetch_openml.
+
+	Returns a dict with keys:
+	- model, metrics_train, metrics_test
+	- X_train, X_test, y_train, y_test, Y_train, Y_test, n_features, n_classes
+	- label_encoder
+	"""
+	from sklearn.model_selection import train_test_split
+	from sklearn.datasets import fetch_openml
+	from sklearn.preprocessing import LabelEncoder
+
+	# Load data if not provided
+	label_encoder = None
+	if X is None or y is None:
+		fashion = fetch_openml('Fashion-MNIST', version=1, as_frame=False, parser='auto')
+		X = fashion.data.astype(np.float32)
+		y_raw = fashion.target
+		label_encoder = LabelEncoder()
+		y = label_encoder.fit_transform(y_raw)
+	else:
+		X = X.astype(np.float32)
+		# y may be strings; encode if needed
+		if not np.issubdtype(np.asarray(y).dtype, np.integer):
+			label_encoder = LabelEncoder()
+			y = label_encoder.fit_transform(np.asarray(y))
+
+	# Scale to [0,1]
+	if X.max() > 1.5:
+		X = X / 255.0
+
+	n_samples, n_features = X.shape
+	n_classes = int(np.unique(y).size)
+
+	# Split
+	strat = y if stratify else None
+	X_train, X_test, y_train, y_test = train_test_split(
+		X, y, test_size=float(test_size), random_state=int(random_state), stratify=strat
+	)
+
+	# One-hot targets
+	Y_train = one_hot(y_train, n_classes)
+	Y_test = one_hot(y_test, n_classes)
+
+	# Build and train model
+	layer_sizes = [n_features, *list(arch), n_classes]
+	acts = ['relu'] * len(arch) + ['softmax']
+	model = FFNN(
+		layer_sizes=layer_sizes,
+		activations=acts,
+		loss='softmax',
+		learning_rate=float(lr),
+		optimizer=str(optimizer),
+		reg=None,
+		seed=int(seed),
+	)
+	_ = model.train(
+		X_train, Y_train,
+		epochs=int(epochs),
+		batch_size=int(batch_size),
+		verbose=False,
+		print_every=1,
+		shuffle=False,
+		log_metrics=True,
+	)
+
+	# Evaluate
+	metrics_train = model.evaluate(X_train, Y_train)
+	metrics_test = model.evaluate(X_test, Y_test)
+
+	result = {
+		'model': model,
+		'metrics_train': metrics_train,
+		'metrics_test': metrics_test,
+		'n_features': n_features,
+		'n_classes': n_classes,
+		'label_encoder': label_encoder,
+	}
+	if return_data:
+		result.update({
+			'X_train': X_train,
+			'X_test': X_test,
+			'y_train': y_train,
+			'y_test': y_test,
+			'Y_train': Y_train,
+			'Y_test': Y_test,
+		})
+	return result
+
+
+__all__.extend(['run_fashion_mnist_softmax'])
+
+# =============================================
+# Confusion matrix utility for classification
+# =============================================
+
+def confusion_matrix_plot(
+	model: Any,
+	X: np.ndarray,
+	y_true: np.ndarray,
+	*,
+	label_encoder: Any | None = None,
+	title: str = 'Confusion Matrix',
+	cmap: str = 'Blues',
+	normalize: str | None = 'true',
+	annotate: str | None = 'auto',  # 'auto' | 'percent' | 'count' | None
+) -> dict:
+	"""Compute and plot a confusion matrix using sklearn; return metrics.
+
+	- model: exposes predict or predict_proba/forward (numpy or torch)
+	- X: features; y_true: integer labels or one-hot
+	- label_encoder: optional for class names
+	Returns a dict with cm (numpy array), accuracy (float), and labels list.
+	"""
+	from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, accuracy_score
+	import matplotlib.pyplot as plt
+
+	# Convert y_true to label indices
+	if isinstance(y_true, np.ndarray) and y_true.ndim == 2 and y_true.shape[1] > 1:
+		y_true_idx = np.argmax(y_true, axis=1)
+	else:
+		y_true_idx = np.asarray(y_true).astype(int).ravel()
+
+	# Predictions
+	def _pred_indices(m, Xb):
+		try:
+			pred = None
+			if hasattr(m, 'predict'):
+				pred = m.predict(Xb)
+			elif hasattr(m, 'predict_proba'):
+				pred = m.predict_proba(Xb)
+			elif hasattr(m, 'forward'):
+				pred = m.forward(Xb)
+			pred = _to_numpy(pred)
+			if pred.ndim == 2 and pred.shape[1] > 1:
+				return np.argmax(pred, axis=1)
+			return pred.astype(int).ravel()
+		except Exception:
+			return np.zeros(Xb.shape[0], dtype=int)
+
+	y_pred_idx = _pred_indices(model, X)
+
+	# Class names
+	labels = None
+	if label_encoder is not None:
+		try:
+			labels = list(label_encoder.classes_)
+		except Exception:
+			labels = None
+
+	cm = confusion_matrix(y_true_idx, y_pred_idx)
+	acc = accuracy_score(y_true_idx, y_pred_idx)
+
+	# Decide what to display: counts or normalized
+	cm_plot = cm.copy().astype(float)
+	cm_norm = None
+	if isinstance(normalize, str):
+		norm_key = normalize.lower()
+		if norm_key == 'true':  # normalize by row (true labels)
+			row_sums = np.clip(cm.sum(axis=1, keepdims=True), 1e-12, None)
+			cm_norm = cm / row_sums
+			cm_plot = cm_norm
+		elif norm_key == 'pred':  # normalize by column (pred labels)
+			col_sums = np.clip(cm.sum(axis=0, keepdims=True), 1e-12, None)
+			cm_norm = cm / col_sums
+			cm_plot = cm_norm
+		elif norm_key == 'all':  # normalize by total
+			total = max(cm.sum(), 1)
+			cm_norm = cm / total
+			cm_plot = cm_norm
+
+	fig, ax = plt.subplots(figsize=(7, 6))
+	if labels is None:
+		disp = ConfusionMatrixDisplay(cm_plot)
+	else:
+		disp = ConfusionMatrixDisplay(cm_plot, display_labels=labels)
+	# Do not include default values to avoid clutter; we'll control annotations below
+	disp.plot(cmap=cmap, ax=ax, colorbar=True, include_values=False)
+
+	# Titles and axes labels
+	ax.set_title(title + f" — acc={acc:.3f}")
+	ax.set_xlabel('Predicted label')
+	ax.set_ylabel('True label')
+
+	# Rotate x tick labels for readability
+	for tick in ax.get_xticklabels():
+		tick.set_rotation(45)
+		tick.set_ha('right')
+
+	# Determine annotation mode
+	ann_mode = annotate
+	if ann_mode == 'auto':
+		ann_mode = 'percent' if cm_norm is not None else 'count'
+
+	# Add annotations (either counts or percentages), with contrast-aware color
+	if ann_mode in ('percent', 'count'):
+		data_for_text = cm_norm if (ann_mode == 'percent' and cm_norm is not None) else cm
+		vmax = float(cm_plot.max()) if cm_plot.size else 1.0
+		thresh = vmax / 2.0
+		n_rows, n_cols = data_for_text.shape
+		for i in range(n_rows):
+			for j in range(n_cols):
+				val = data_for_text[i, j]
+				if ann_mode == 'percent' and cm_norm is not None:
+					text_str = f"{val*100:.1f}%"
+				else:
+					text_str = f"{int(val)}"
+				color = 'white' if cm_plot[i, j] > thresh else 'black'
+				ax.text(j, i, text_str, ha='center', va='center', fontsize=9, color=color)
+
+	plt.tight_layout(); plt.show()
+
+	return {'cm': cm, 'cm_norm': cm_norm, 'accuracy': float(acc), 'labels': labels}
+
+__all__.extend(['confusion_matrix_plot'])
+
