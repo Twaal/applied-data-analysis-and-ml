@@ -16,50 +16,142 @@
 \usepackage{hyperref}         % automagic cross-referencing 
 \usepackage{float}			  % force placement of tables and figures
 \usepackage{placeins}         % provides \FloatBarrier to keep floats within sections
+\usepackage{booktabs}
 
 \begin{document}
 
-\title{FYS-STK4155 Project 2 Report \\ \normalsize{Regression and Classification Using a Feedforward Neural Network}}
-\author{Samson Badishe}
-\affiliation{University of Oslo}
-\author{Bartek Trela}
-\affiliation{University of Oslo}
-\author{Theodor Wålberg}
-\affiliation{University of Oslo}
+% --- Include your cover page first ---
+\clearpage
+\thispagestyle{empty}
+\input{coverpage.tex}
+\clearpage
+
+% --- Table of Contents & List of Figures ---
+\onecolumngrid
+\clearpage
+\thispagestyle{empty}
+\tableofcontents
+\listoffigures
+\clearpage
+
+% --- Abstract in one-column mode ---
+\onecolumngrid
 
 
 
-\date{\today}
 
-\newpage
-	
+
+%\twocolumngrid % 
+% --- Main report starts here ---
+%\title{FYS-STK4155 Project 2 Report \\ \normalsize{Regression and Classification Using a Feedforward Neural Network}}
+%%%author{Bartek Trela}
+%\affiliation{University of Oslo}
+%\author{Theodor Wålberg}
+%\affiliation{University of Oslo}
+
+
+% restart page numbering from 1 after cover page
+
+
 \begin{abstract}
-%This project explores the implementation and performance of a fully connected feedforward neural network (FFNN) applied to both regression and classification problems. The regression task focuses on approximating the one-dimensional Runge function, a well-known benchmark for testing overfitting tendencies in numerical interpolation methods \cite{deisenroth2020}. Accurately fitting this function is challenging due to its sharp curvature near the boundaries, making it a useful case for evaluating how neural networks generalize compared to linear and regularized regression techniques. The classification task involves the multiclass MNIST dataset of handwritten digits \cite{lecun1998mnist}, serving as a standard benchmark for evaluating neural network performance on high-dimensional data \cite{hastie2025}.
 
-%Our primary objectives are to (i) develop and implement an FFNN from scratch using stochastic gradient descent and adaptive optimizers such as RMSprop and ADAM \cite{deisenroth2020}, (ii) compare its performance with that of traditional regression methods from Project 1 (OLS, Ridge, and Lasso), and (iii) investigate the influence of activation functions (Sigmoid, ReLU, and Leaky ReLU), network depth, and regularization on learning performance.
+This project explored the implementation and performance of a fully connected feedforward neural network (FFNN) applied to both regression and classification problems. The regression task focused on approximating the one-dimensional Runge function, a benchmark for testing overfitting tendencies in numerical interpolation methods \cite{deisenroth2020, compfys}. Accurately fitting this function is challenging due to its sharp curvature near the boundaries, making it a useful case for evaluating how neural networks generalize compared to linear and regularized regression techniques. The classification task involved the multiclass MNIST dataset of handwritten digits \cite{lecun1998mnist}, serving as a standard benchmark for evaluating neural network performance on high-dimensional data \cite{hastie2025}.
 
-This project explores the implementation and performance of a fully connected feedforward neural network (FFNN) applied to both regression and classification problems. The regression task focuses on approximating the one-dimensional Runge function, a benchmark for testing overfitting tendencies in numerical interpolation methods \cite{deisenroth2020, compfys}. Accurately fitting this function is challenging due to its sharp curvature near the boundaries, making it a useful case for evaluating how neural networks generalize compared to linear and regularized regression techniques. The classification task involves the multiclass MNIST dataset of handwritten digits \cite{lecun1998mnist}, serving as a standard benchmark for evaluating neural network performance on high-dimensional data \cite{hastie2025}.
+We developed and implemented an FFNN from scratch using stochastic gradient descent and adaptive optimizers such as RMSprop and Adam \cite{deisenroth2020}, compared its performance with that of traditional regression methods (OLS, Ridge, and Lasso), and investigated the influence of activation functions (Sigmoid, ReLU, and Leaky ReLU), network depth, and regularization on learning performance.\footnote{Project~1 materials and code: \url{https://github.com/Twaal/applied-data-analysis-and-ml/tree/main/Project1}}
 
-We developed and implemented an FFNN from scratch using stochastic gradient descent and adaptive optimizers such as RMSprop and ADAM \cite{deisenroth2020}, compared its performance with that of traditional regression methods (OLS, Ridge, and Lasso), and investigated the influence of activation functions (Sigmoid, ReLU, and Leaky ReLU), network depth, and regularization on learning performance.
+In summary, the FFNN fit the Runge function without the severe oscillations observed in high-degree polynomial regression, achieving test MSEs of $3.96\times 10^{-6}$ with $L_1$ and $5.51\times 10^{-6}$ with $L_2$ regularization on the original target scale, compared to $5.52\times 10^{-2}$ for the best Ridge/Lasso baselines (Table~\ref{tab:runge-regularization}). For classification, the FFNN achieved about $97\%$ test accuracy on MNIST and about $88\%$ on the more challenging Fashion-MNIST variant, comparable to a similar network implemented in PyTorch.
 
-In summary, we found that our FFNN could fit the Runge function without the severe oscillations observed in high-degree polynomial regression, achieving lower test mean squared error than the linear models \textcolor{red}{Should we add some numbers here?}. For the MNIST classification, the FFNN achieved over 95\% test accuracy, and about 85\% on the more challenging Fashion-MNIST variant, which is comparable to a similar network implemented in PyTorch.
 \end{abstract}
 
 \maketitle
+\newpage
+\clearpage
 
+\setcounter{page}{1}  
+\twocolumngrid
 \section{Introduction}
-Machine learning methods have revolutionized how we model and interpret complex relationships in data. While classical regression techniques such as Ordinary Least Squares (OLS), Ridge, and Lasso regression provide interpretable and efficient approaches for many problems, their representational capacity is fundamentally limited to linear or polynomial relationships. Neural networks, in contrast, offer a flexible framework capable of approximating highly nonlinear functions, given sufficient network depth and training data \cite{deisenroth2020}.
 
-In this project, we extend the regression framework developed in Project 1 by implementing a feedforward neural network (FFNN) from first principles. The first part of the project focuses on a regression problem based on the one-dimensional Runge function,
-\begin{equation}
-\label{eq:runge_fn}
-f(x) = \frac{1}{1 + 25x^2},
-\end{equation}
-which is a classical test case in numerical analysis due to its oscillatory behavior and sensitivity to overfitting. The goal is to evaluate how a neural network trained using mean squared error (MSE) compares to traditional regression approaches in terms of predictive accuracy, bias, and stability. We further explore how different optimization methods (stochastic gradient descent, RMSprop, and ADAM) \cite{deisenroth2020}, learning rates, and activation functions influence convergence and generalization.
+Machine learning has progressed from early linear perceptron models to modern deep architectures capable of representing highly complex, hierarchical feature transformations. Feedforward neural networks (FFNNs) despite their conceptual simplicity remain a foundational architecture for understanding core principles of representation, optimization, and generalization. In contrast to classical parametric regression methods (e.g., Ordinary Least Squares (OLS), Ridge, Lasso), which rely on fixed, often global basis expansions like polynomials, FFNNs learn data-adaptive intermediate representations layer by layer. This project examines that contrast in a controlled setting spanning both nonlinear regression and multiclass classification.
 
-The second part of the project extends the same neural network framework to a multiclass classification task using the MNIST dataset \cite{lecun1998mnist}. This dataset of handwritten digits represents a high-dimensional nonlinear classification problem that allows us to test the FFNN’s ability to learn complex decision boundaries. Using the cross-entropy loss and Softmax output activation, we compare the network’s accuracy against established machine learning libraries such as Scikit-learn or Pytorch \cite{hastie2025}.
+\subsection*{Problem Setting and Motivation}
+We study two canonical supervised learning tasks:
+\begin{enumerate}
+    \item \textbf{Regression}: Approximation of the univariate Runge function
+    \[
+        f(x)=\frac{1}{1+25x^2}, \quad x\in[-1,1],
+    \]
+  a long–standing benchmark that exposes the instability of high-degree polynomial interpolation (Runge’s phenomenon). The Runge function itself is smooth; the oscillations arise in \emph{polynomial approximations}, especially near interval boundaries, providing a stress test for models’ bias–variance trade-offs.
+    \item \textbf{Classification}: Recognition of handwritten digits (MNIST) and clothing items (Fashion-MNIST). While MNIST offers relatively well-separated digit manifolds, Fashion-MNIST introduces higher intra-class variability and inter-class ambiguity (e.g., shirts vs. coats), requiring more discriminative nonlinear transformations.
+\end{enumerate}
+These tasks jointly probe (i) function approximation fidelity under nonuniform curvature (regression) and (ii) decision boundary learning in high-dimensional sparse input spaces (classification).
 
-The overall objectives of the project are: (1) to construct a general neural network framework capable of handling both regression and classification, (2) to investigate how architectural and hyperparameter choices affect performance, and (3) to critically compare the neural network’s performance with established regression and classification methods. Through these experiments, we aim to illustrate both the strengths and limitations of neural networks relative to more traditional machine learning techniques \cite{deisenroth2020,hastie2025}.
+\subsection*{Theoretical Underpinnings}
+The universal approximation theorems \cite{cybenko1989,hornik1991} establish that sufficiently wide FFNNs with non-polynomial activation functions can approximate continuous functions on compact domains arbitrarily well. However, these results are \emph{existential}: they neither guarantee efficient training nor characterize sample complexity. Practical performance depends critically on:
+\begin{itemize}
+    \item \textbf{Optimization landscape}: Non-convex objectives with many saddle points; adaptive methods (RMSprop, Adam) mitigate pathological curvature and gradient ill-conditioning \cite{kingma2014adam}.
+    \item \textbf{Activation choice}: Sigmoid induces saturation (vanishing gradients) for large $|z|$; ReLU promotes sparse gradient flow while risking inactive (“dead”) units; Leaky ReLU introduces a controlled negative slope to preserve gradient propagation.
+    \item \textbf{Regularization}: Explicit (L1/L2 penalties) versus implicit (early stopping, stochastic minibatches) mechanisms shape generalization, controlling parameter norms and effective capacity.
+\end{itemize}
+Together these components frame the model expressivity vs. trainability trade-off central to our empirical analysis.
+
+\subsection*{Classical vs Neural Approaches}
+OLS, Ridge, and Lasso rely on predetermined feature maps; their inductive bias is transparent and their estimators convex, yielding closed-form or well-behaved solutions. Yet, when the target function exhibits localized high curvature (Runge) or the input manifold is complex (image pixels), linear combinations of global bases struggle. FFNNs adapt intermediate representations through composition
+\[
+    \mathbf{a}^{(l)} = g^{(l)}\!\left(\mathbf{W}^{(l)}\mathbf{a}^{(l-1)} + \mathbf{b}^{(l)}\right),
+\]
+implicitly constructing multi-scale, nonlinear bases. We systematically compare these paradigms to quantify performance gaps and failure modes.
+
+\paragraph{Comparison criteria.} Throughout, we evaluate along four axes: (i) predictive performance (test MSE for regression, accuracy for classification), (ii) computational efficiency (epochs and wall-clock to convergence), (iii) usability/complexity (sensitivity to hyperparameters and implementation effort), and (iv) interpretability (coefficient-based insight for linear models versus distributed representations in FFNNs).
+
+\subsection*{Dataset Characteristics}
+MNIST offers relatively clean grayscale digit silhouettes with low intra-class variance. Fashion-MNIST \cite{xiao2017fashionmnist} introduces finer-grained distinctions (texture, shape) and higher overlap in pixel distributions, elevating classification difficulty. These paired datasets probe whether architectural and optimization choices yield robust improvements rather than overfitting to a trivial benchmark.
+
+\paragraph{Why neural networks for classification?} Pixel inputs are high-dimensional and the class boundaries are typically nonlinear. While a linear baseline (multinomial logistic regression) offers a useful reference, multilayer networks can learn hierarchical feature transformations that better separate classes in representation space; we therefore use logistic regression as a baseline but focus on FFNNs to study how nonlinearity and depth affect generalization.
+
+\subsection*{From-Scratch Implementation Rationale}
+Implementing the FFNN manually (NumPy-only) serves three purposes:
+\begin{enumerate}
+    \item \textbf{Transparency}: Each gradient term is explicitly derived (losses, activations), facilitating validation against analytical expressions.
+    \item \textbf{Reproducibility}: Controlled seeding, deterministic preprocessing, and modular training loops allow experiment replication and ablation (optimizer, regularization, architecture).
+    \item \textbf{Pedagogical clarity}: Avoiding automatic differentiation prevents “silent” broadcasting or hidden state manipulations typical in high-level frameworks, surfacing numerical stability considerations directly.
+\end{enumerate}
+We additionally benchmark against a minimal PyTorch multilayer perceptron to verify parity and detect implementation discrepancies.
+
+\subsection*{Experimental Design}
+We adopt a factorial sweep strategy varying:
+\begin{itemize}
+    \item Depth (number of hidden layers) and width (neurons per layer).
+    \item Activation function family (Sigmoid, ReLU, Leaky ReLU).
+    \item Optimizer (plain Gradient Descent, RMSprop, Adam) and learning rate schedules.
+    \item Regularization type (L1 vs L2) and strength $\lambda$.
+\end{itemize}
+Metrics include train/test MSE (regression) and accuracy/confusion matrices (classification), enabling assessment of generalization gaps, overfitting tendencies, and sensitivity to hyperparameters.
+
+\subsection*{Contributions}
+This work provides:
+\begin{enumerate}
+    \item Unified analytical derivations for regression (MSE) and classification (binary/multiclass cross-entropy with Sigmoid/Softmax).
+    \item A modular NumPy FFNN supporting heterogeneous activation/loss configurations and explicit regularization.
+    \item Systematic comparative evaluation vs polynomial regression (OLS, Ridge, Lasso) on a nontrivial analytic benchmark.
+    \item Optimizer sensitivity analysis highlighting stability regions and convergence dynamics.
+    \item Regularization ablation quantifying L1 vs L2 effects on Runge function approximation.
+    \item Validation against a PyTorch reference implementation to confirm gradient correctness.
+\end{enumerate}
+
+\subsection*{Scope, Limitations, and Outlook}
+We deliberately exclude convolutional inductive biases, Batch Normalization \cite{ioffe2015batchnorm}, and Dropout \cite{srivastava2014dropout} to isolate core FFNN behavior. Consequently, results on Fashion-MNIST represent a baseline rather than state-of-the-art performance. Future extensions include:
+\begin{itemize}
+    \item Incorporation of normalization and stochastic regularization layers.
+    \item Automated hyperparameter optimization (Bayesian search, successive halving).
+    \item Extension to convolutional or residual architectures for spatially structured data.
+    \item Interpretability analyses (saliency maps, layer activation statistics) to interrogate learned representations.
+\end{itemize}
+
+\subsection*{Paper Roadmap}
+Section~\ref{section:methods} formalizes losses, activations, gradient propagation, and optimization; Section~\ref{section:results} reports empirical findings for regression and classification; Section~\ref{section:discussion} integrates theoretical and practical implications; Section~\ref{section:conclusion} summarizes conclusions and future directions; Appendices provide reproducibility artifacts and source references.
+
+Overall, this introduction frames the methodological, theoretical, and empirical rationale for evaluating a hand-crafted FFNN across divergent supervised learning regimes, highlighting both capability and boundary conditions of fully connected architectures.
+
     
 \section{Methods}\label{section:methods}
 
@@ -79,26 +171,26 @@ For regression tasks, we use the mean squared error (MSE) loss
 binary or multiclass cross--entropy loss, both of which are standard in modern
 neural network formulations \cite{goodfellow2016,compfys}. In all cases, the loss
 can be extended with $L_1$ or $L_2$ regularization terms to penalize large
-weights and reduce overfitting \cite{hastie2025,hastie}.
+weights and reduce overfitting \cite{hastie2025}.
 
 
 \paragraph{Mean Squared Error (MSE):}
-For scalar targets $t_i$ and predictions $y_i$, the MSE loss reads
+For scalar targets $t_i$ and predictions $\hat{y}_i$, the MSE loss reads
 \begin{equation}
 \label{MSE loss}
 \mathcal{L}_{\mathrm{MSE}} =
-\frac{1}{n}\sum_{i=1}^{n}(y_i - t_i)^2.
+\frac{1}{n}\sum_{i=1}^{n}(\hat{y}_i - t_i)^2.
 \end{equation}
-Differentiating each term with respect to $y_i$ gives
+Differentiating each term with respect to $\hat{y}_i$ gives
 \begin{equation}
-\frac{\partial \mathcal{L}_{\mathrm{MSE}}}{\partial y_i}
-= \frac{2}{n}(y_i - t_i),
+\frac{\partial \mathcal{L}_{\mathrm{MSE}}}{\partial \hat{y}_i}
+= \frac{2}{n}(\hat{y}_i - t_i),
 \end{equation}
 which defines the output error
-$\delta^{(L)} = \frac{2}{n}(y - t)$ for regression problems
+$\delta^{(L)} = \frac{2}{n}(\hat{\mathbf{y}} - \mathbf{t})$ for regression problems
 \cite{deisenroth2020}. Including $L_2$ or $L_1$ regularization modifies the
 total loss and gradients to include penalty terms
-\cite{hastie2025,hastie}, respectively:
+\cite{hastie2025}, respectively:
 \begin{align}
 \text{With } L_2 \text{ (Ridge):}\quad
 \frac{\partial \mathcal{L}}{\partial w_j}
@@ -108,45 +200,45 @@ total loss and gradients to include penalty terms
 &= \frac{\partial \mathcal{L}_{\text{data}}}{\partial w_j} + \lambda\,\mathrm{sign}(w_j).
 \end{align}
 These formulations are equivalent to Ridge and Lasso regression
-from Project~1 \cite{hastie,deisenroth2020}.
+from Project~1 \cite{hastie2025,deisenroth2020}.
 
 \medskip
 \paragraph{Binary cross--entropy:}
 For binary classification, the output neuron uses a sigmoid activation
-$y_i=\sigma(z_i)=(1+e^{-z_i})^{-1}$, producing an output interpreted as the
+$\hat{y}_i=\sigma(z_i)=(1+e^{-z_i})^{-1}$, producing an output interpreted as the
 probability of class $1$. The corresponding binary cross--entropy loss is
 \begin{equation}
 \label{eq:bce_loss}
 \mathcal{L}_{\mathrm{BCE}}
 = -\frac{1}{n}\sum_{i=1}^{n}
-\left[t_i\log y_i + (1-t_i)\log(1-y_i)\right],
+\left[t_i\log \hat{y}_i + (1-t_i)\log(1-\hat{y}_i)\right],
 \end{equation}
 which penalizes confident but incorrect predictions
-\cite{nielsen2015,goodfellow2016,deisenroth2020,hastie2025}.
+\cite{goodfellow2016,deisenroth2020,hastie2025}.
 
-Differentiating with respect to the output $y_i$ gives
+Differentiating with respect to the output $\hat{y}_i$ gives
 \begin{equation}
-\frac{\partial \mathcal{L}}{\partial y_i}
-= -\frac{1}{n}\left(\frac{t_i}{y_i}-\frac{1-t_i}{1-y_i}\right).
+\frac{\partial \mathcal{L}}{\partial \hat{y}_i}
+= -\frac{1}{n}\left(\frac{t_i}{\hat{y}_i}-\frac{1-t_i}{1-\hat{y}_i}\right).
 \end{equation}
 Applying the chain rule through the sigmoid activation
-$\frac{\partial y_i}{\partial z_i}=y_i(1-y_i)$:
+$\frac{\partial \hat{y}_i}{\partial z_i}=\hat{y}_i(1-\hat{y}_i)$:
 \begin{align}
 \frac{\partial \mathcal{L}}{\partial z_i}
-&=\frac{\partial \mathcal{L}}{\partial y_i}
-  \frac{\partial y_i}{\partial z_i} \nonumber\\[4pt]
-&=-\frac{1}{n}\!\left(\frac{t_i}{y_i}-\frac{1-t_i}{1-y_i}\right)
-  y_i(1-y_i) \nonumber\\[4pt]
-&=\frac{1}{n}(y_i-t_i).
+&=\frac{\partial \mathcal{L}}{\partial \hat{y}_i}
+  \frac{\partial \hat{y}_i}{\partial z_i} \nonumber\\[4pt]
+&=-\frac{1}{n}\!\left(\frac{t_i}{\hat{y}_i}-\frac{1-t_i}{1-\hat{y}_i}\right)
+  \hat{y}_i(1-\hat{y}_i) \nonumber\\[4pt]
+&=\frac{1}{n}(\hat{y}_i-t_i).
 \end{align}
-The factor $y_i(1-y_i)$ from the sigmoid derivative cancels with the
+The factor $\hat{y}_i(1-\hat{y}_i)$ from the sigmoid derivative cancels with the
 denominator, leaving a simple expression identical to logistic regression.
 This avoids the small--gradient problem of the quadratic loss when the neuron
 is saturated \cite{nielsen2015}.
 
 Therefore, for a sigmoid output layer,
 \begin{equation}
-\delta^{(L)} = y - t,
+\delta^{(L)} = \hat{\mathbf{y}} - \mathbf{t},
 \end{equation}
 which is the error signal used in backpropagation
 (Sec.~\ref{subsec:backpropagation}).
@@ -159,7 +251,7 @@ $\mathbf{z}_i = (z_{i,1},\dots,z_{i,K})$ for each sample $i$.
 The Softmax activation converts these logits into class probabilities
 \cite{goodfellow2016,deisenroth2020}:
 \begin{equation}
-y_{i,k} = \mathrm{softmax}(\mathbf{z}_i)_k
+\hat{y}_{i,k} = \mathrm{softmax}(\mathbf{z}_i)_k
 = \frac{e^{z_{i,k}}}{\sum_{m=1}^{K} e^{z_{i,m}}}.
 \end{equation}
 Given one--hot encoded targets $\mathbf{t}_i$ with components $t_{i,k}\in\{0,1\}$,
@@ -168,74 +260,74 @@ the categorical cross--entropy loss is
 \label{eq:softmax_loss}
 \mathcal{L}_{\mathrm{Softmax}}
 = -\frac{1}{n}\sum_{i=1}^{n}\sum_{k=1}^{K}
-t_{i,k}\log y_{i,k},
+t_{i,k}\log \hat{y}_{i,k},
 \end{equation}
 which is the negative log--likelihood of the correct class
-\cite{mehta2023softmax,goodfellow2016}.
+\cite{goodfellow2016}.
 
 For a fixed sample $i$, the per-sample loss is
 \[
-\ell_i = -\sum_{k=1}^{K} t_{i,k}\log y_{i,k}.
+\ell_i = -\sum_{k=1}^{K} t_{i,k}\log \hat{y}_{i,k}.
 \]
 We first differentiate w.r.t. the Softmax outputs:
 \begin{equation}
-\frac{\partial \ell_i}{\partial y_{i,k}}
+\frac{\partial \ell_i}{\partial \hat{y}_{i,k}}
 = -\frac{t_{i,k}}{y_{i,k}}.
 \end{equation}
 To apply the chain rule, we need $\partial y_{i,k}/\partial z_{i,j}$.
 Starting from
 \[
-\log y_{i,k}
+\log \hat{y}_{i,k}
 = z_{i,k} - \log\!\left(\sum_{m=1}^{K} e^{z_{i,m}}\right),
 \]
 we differentiate with respect to $z_{i,j}$:
 \begin{align}
-\frac{\partial \log y_{i,k}}{\partial z_{i,j}}
+\frac{\partial \log \hat{y}_{i,k}}{\partial z_{i,j}}
 &= \delta_{kj}
  - \frac{1}{\sum_{m} e^{z_{i,m}}}
    \frac{\partial}{\partial z_{i,j}}
    \sum_{m} e^{z_{i,m}} \nonumber\\[4pt]
 &= \delta_{kj} - \frac{e^{z_{i,j}}}{\sum_{m} e^{z_{i,m}}}
- = \delta_{kj} - y_{i,j},
+ = \delta_{kj} - \hat{y}_{i,j},
 \end{align}
 and using
-$\frac{\partial y_{i,k}}{\partial z_{i,j}}
- = y_{i,k}\,\frac{\partial \log y_{i,k}}{\partial z_{i,j}}$,
+$\frac{\partial \hat{y}_{i,k}}{\partial z_{i,j}}
+ = \hat{y}_{i,k}\,\frac{\partial \log \hat{y}_{i,k}}{\partial z_{i,j}}$,
 we obtain the standard Softmax derivative
 \cite{mehta2023softmax}:
 \begin{equation}
-\frac{\partial y_{i,k}}{\partial z_{i,j}}
-= y_{i,k}\bigl(\delta_{kj} - y_{i,j}\bigr).
+\frac{\partial \hat{y}_{i,k}}{\partial z_{i,j}}
+= \hat{y}_{i,k}\bigl(\delta_{kj} - \hat{y}_{i,j}\bigr).
 \end{equation}
 
 Combining these with the chain rule,
 \begin{align}
 \frac{\partial \ell_i}{\partial z_{i,j}}
 &= \sum_{k=1}^{K}
-   \frac{\partial \ell_i}{\partial y_{i,k}}
-   \frac{\partial y_{i,k}}{\partial z_{i,j}} \nonumber\\[4pt]
+  \frac{\partial \ell_i}{\partial \hat{y}_{i,k}}
+  \frac{\partial \hat{y}_{i,k}}{\partial z_{i,j}} \nonumber\\[4pt]
 &= \sum_{k=1}^{K}
-   \left(-\frac{t_{i,k}}{y_{i,k}}\right)
-   y_{i,k}\bigl(\delta_{kj} - y_{i,j}\bigr) \nonumber\\[4pt]
+  \left(-\frac{t_{i,k}}{\hat{y}_{i,k}}\right)
+  \hat{y}_{i,k}\bigl(\delta_{kj} - \hat{y}_{i,j}\bigr) \nonumber\\[4pt]
 &= -\sum_{k=1}^{K} t_{i,k}\delta_{kj}
-   + \sum_{k=1}^{K} t_{i,k} y_{i,j} \nonumber\\[4pt]
-&= -t_{i,j} + y_{i,j}\sum_{k=1}^{K} t_{i,k}.
+  + \sum_{k=1}^{K} t_{i,k} \hat{y}_{i,j} \nonumber\\[4pt]
+&= -t_{i,j} + \hat{y}_{i,j}\sum_{k=1}^{K} t_{i,k}.
 \end{align}
 Since $\mathbf{t}_i$ is one--hot, $\sum_{k} t_{i,k} = 1$, and we obtain
 \begin{equation}
 \frac{\partial \ell_i}{\partial z_{i,j}}
-= y_{i,j} - t_{i,j}.
+= \hat{y}_{i,j} - t_{i,j}.
 \end{equation}
 Averaging over all $n$ samples in \eqref{eq:softmax_loss} gives
 \begin{equation}
 \frac{\partial \mathcal{L}_{\mathrm{Softmax}}}{\partial z_{i,j}}
-= \frac{1}{n}\bigl(y_{i,j} - t_{i,j}\bigr),
+= \frac{1}{n}\bigl(\hat{y}_{i,j} - t_{i,j}\bigr),
 \end{equation}
 the familiar ``Softmax--cross--entropy trick''
 \cite{mehta2023softmax,goodfellow2016}.
 In vector form, this corresponds to the output error
 \begin{equation}
-\delta^{(L)} = Y - T,
+\delta^{(L)} = \hat{\mathbf{Y}} - \mathbf{T},
 \end{equation}
 which we use as the starting point for backpropagation in the
 classification setting (Sec.~\ref{subsec:backpropagation}).
@@ -248,8 +340,8 @@ to model nonlinear relationships
 Their derivatives $g'(z)$ appear directly in the recursive backpropagation
 rule
 \[
-\delta^{(l)} = \bigl(\delta^{(l+1)} W^{(l+1)\top}\bigr)
-\odot g'^{(l)}(z^{(l)}).
+\delta^{(l)} = \bigl(\delta^{(l+1)} \mathbf{W}^{(l+1)\top}\bigr)
+\odot g'^{(l)}\bigl(\mathbf{z}^{(l)}\bigr).
 \]
 We summarize below the three activation functions used in this project and
 derive their first derivatives step by step.
@@ -338,38 +430,38 @@ Weights were initialized from a small normal distribution $\mathcal{N}(0, 0.01)$
 
 \subsection{Backpropagation}
 \label{subsec:backpropagation}
-Gradients were derived and implemented manually to ensure transparency of the learning process. Using the chain rule, the error signal was propagated backward from the output layer through hidden layers to compute parameter updates. For the output layer, the gradient of the loss with respect to the pre-activation was computed as
+Gradients were derived and implemented manually to ensure transparency of the learning process. Using the chain rule, the error signal was propagated backward from the output layer through hidden layers to compute parameter updates. We adopt the notation: targets $\mathbf{t}$ (or matrix $T$), predictions $\hat{\mathbf{y}} = \mathbf{a}^{(L)}$ (or $Y$ for a batch), layer pre-activations $\mathbf{z}^{(l)}$, activations $\mathbf{a}^{(l)}$, and weight matrices $\mathbf{W}^{(l)}$ with biases $\mathbf{b}^{(l)}$. Bold symbols denote vectors/matrices; batch samples are arranged row-wise.
+
+For the output layer, the gradient of the loss with respect to the pre-activation simplifies to
 \begin{equation}
 \label{eq:delta_output_alt}
 \delta^{(L)} =
-\left\{
-\begin{aligned}
-&\bigl(\mathbf{a}^{(L)} - \mathbf{y}\bigr) \odot g'^{(L)}\bigl(\mathbf{z}^{(L)}\bigr),
-&&\text{for MSE},\\
-&\mathbf{a}^{(L)} - \mathbf{y},
-&&\text{for Softmax}.
-\end{aligned}\right.
+\begin{cases}
+\bigl(\hat{\mathbf{y}} - \mathbf{t}\bigr) \odot g'^{(L)}\!\bigl(\mathbf{z}^{(L)}\bigr), & \text{MSE (regression)},\\[4pt]
+\hat{\mathbf{y}} - \mathbf{t}, & \text{Softmax cross-entropy (classification)}.
+\end{cases}
 \end{equation}
+where $\odot$ denotes elementwise (Hadamard) multiplication.
 
-where $\odot$ denotes elementwise multiplication. Hidden layer gradients were propagated recursively as
+Hidden layer error signals propagate recursively as
 \[
-\delta^{(l)} = (\delta^{(l+1)} \mathbf{W}^{(l+1)\top}) \odot g'^{(l)}(\mathbf{z}^{(l)}),
+\delta^{(l)} = \bigl(\delta^{(l+1)} \mathbf{W}^{(l+1)\top}\bigr) \odot g'^{(l)}\!\bigl(\mathbf{z}^{(l)}\bigr),
 \]
-and the gradients of the cost with respect to weights and biases were
-\[
-\frac{\partial \mathcal{L}}{\partial \mathbf{W}^{(l)}} = \frac{1}{m} (\mathbf{a}^{(l-1)})^\top \delta^{(l)} + \frac{\partial R}{\partial \mathbf{W}^{(l)}}, \quad
-\frac{\partial \mathcal{L}}{\partial \mathbf{b}^{(l)}} = \frac{1}{m} \sum_i \delta_i^{(l)},
-\]
-where $R$ is the regularization term.
+and the gradients of the loss with respect to weights and biases (for a mini-batch of size $m$) are
+\begin{align*}
+\frac{\partial \mathcal{L}}{\partial \mathbf{W}^{(l)}} &= \frac{1}{m} \mathbf{a}^{(l-1)\top} \delta^{(l)} + \frac{\partial R}{\partial \mathbf{W}^{(l)}},\\
+\frac{\partial \mathcal{L}}{\partial \mathbf{b}^{(l)}} &= \frac{1}{m} \sum_{i=1}^{m} \delta^{(l)}_i,
+\end{align*}
+with $R$ the regularization penalty (L1 or L2) applied only to weights, not biases.
 
 \subsection{Gradient Descent and Optimizers}
 Parameter updates were carried out using mini-batch gradient descent, with modular support for three optimizers:
 \begin{itemize}
     \item \textbf{Plain Gradient Descent (GD):} Updates weights by a fixed learning rate $\eta$.
     \item \textbf{RMSprop:} Maintains an exponentially decaying average of squared gradients, improving stability for non-stationary objectives.
-    \item \textbf{ADAM:} Combines momentum and RMSprop by keeping first and second moment estimates of gradients \cite{kingma2014adam}.
+  \item \textbf{Adam:} Combines momentum and RMSprop by keeping first and second moment estimates of gradients \cite{kingma2014adam}.
 \end{itemize}
-All optimizers were implemented manually, using standard hyperparameters $(\beta_1, \beta_2, \epsilon) = (0.9, 0.999, 10^{-8})$ for ADAM and a decay rate $\rho = 0.9$ for RMSprop. The training loop was written without automatic differentiation or external machine-learning libraries.
+All optimizers were implemented manually, using standard hyperparameters $(\beta_1, \beta_2, \epsilon) = (0.9, 0.999, 10^{-8})$ for Adam and a decay rate $\rho = 0.9$ for RMSprop. The training loop was written without automatic differentiation or external machine-learning libraries.
 
 \subsection{Data Scaling and Splitting}
 All datasets were split into training and test subsets using \texttt{scikit-learn}'s\cite{scikit-learn} \texttt{train\_test\_split} function, with a fixed random seed for reproducibility. Input features and (for regression) output targets were standardized to zero mean and unit variance using \texttt{StandardScaler}. For the regression task, we generated $500$ points $x \in [-1, 1]$ and computed targets $f(x) = (1 + 25x^2)^{-1}$ Runge function\ref{eq:runge_fn}. For classification, we used the MNIST dataset of $28 \times 28$ grayscale handwritten digits and the MNIST fashion dataset which has more complex data distribution. These images are originally in grayscale. We preprocessed these images by normalizing the pixel intensities.
@@ -377,7 +469,7 @@ All datasets were split into training and test subsets using \texttt{scikit-lear
 \subsection{Metrics}
 Regression performance was evaluated using the mean squared error (MSE),
 \[
-\mathrm{MSE} = \frac{1}{n}\sum_i (y_i - \hat{y}_i)^2,
+\mathrm{MSE} = \frac{1}{n}\sum_i (t_i - \hat{y}_i)^2,
 \]
 while classification performance was quantified using the accuracy score,
 \[
@@ -399,26 +491,53 @@ This section provides a high–level overview of the code base rather than repro
   \item \textbf{Optional parity layer}: if PyTorch is installed, a minimal MLP class and training function allow side-by-side result comparison to validate our manual gradients.
 \end{itemize}
 
-\paragraph{Design principles.} The code favors transparency: arrays are kept in simple Python lists for weights and biases; forward propagation caches activations explicitly; backpropagation manually applies derived analytical gradients from Sec.~\ref{subsec:analytical}. Regularization terms are added only to weight matrices (excluding biases) to mirror conventional Ridge/Lasso practice. Optimizers (GD, RMSprop, Adam) each maintain minimal state dictionaries, making parameter update logic easy to audit.
+\paragraph{Design principles.} The code favors transparency: arrays are kept in simple Python lists for weights and biases; forward propagation caches activations explicitly; backpropagation manually applies derived analytical gradients from Sec.~\ref{subsec:analytical}. Regularization terms are added only to weight matrices (excluding biases) to mirror conventional Ridge/Lasso practice. Optimizers (GD, RMSprop, Adam) each maintain minimal state dictionaries.
 
 \paragraph{Notebook workflow.} Notebooks orchestrate experiments by (i) preparing data (scaling and train/test split), (ii) instantiating model configurations, (iii) invoking sweep utilities or the network's \texttt{train()} method, and (iv) plotting metrics. This separation keeps the module reusable while notebooks remain lightweight, serving as documented experiment recipes.
 
 \paragraph{Reproducibility and logging.} Deterministic seeds are passed to NumPy's random generator, and hyperparameters (depth, width, activation, optimizer, learning rate, regularization type/strength, epochs, batch size) are stored alongside results in dictionaries consumed by summary/plot functions. This enables result tables and figures in Sec.~\ref{section:results} to be regenerated verbatim.
 
-In summary, the implementation offers a compact, inspectable reference framework for regression and classification without relying on automatic differentiation or external deep learning libraries. We focus on interpreting outcomes and comparative performance in the following Results section rather than presenting raw code listings here.
+In summary, the implementation offers a compact, inspectable reference framework for regression and classification without relying on automatic differentiation or external deep learning libraries.
 
 \section{Use of AI tools}
 We used ChatGPT\cite{openai2025chatgpt} to assist with drafting text and troubleshooting coding issues. All generated suggestions were reviewed, verified, and edited by us to ensure correctness and relevance to the project.
 
 
 \section{Results}\label{section:results}
-This section presents our empirical findings for regression (Runge function) and classification (MNIST, Fashion-MNIST). Figures referenced below are exported directly from the accompanying notebook \texttt{Project2/code/project2.ipynb}. To plug in figures, export images into \texttt{Project2/report/figures/} using the suggested filenames; the \verb+\graphicspath+ declared in the preamble will resolve them automatically. Each figure caption states the experimental setup and hyperparameters needed for exact reproduction.
-
-\medskip
-\noindent\textit{How to reproduce:} In the notebook, run the corresponding cells to generate the plots, export them (e.g., \texttt{.png} or \texttt{.pdf}) with the filenames indicated in the captions below, and place them under \texttt{Project2/report/figures/}. Hyperparameters and seeds are reported in captions and/or figure legends.
+This section presents our empirical findings for regression (Runge function) and classification (MNIST, Fashion-MNIST). Figures referenced below are exported directly from the accompanying notebook \texttt{Project2/code/project2.ipynb}.
 
 \subsection{Regression Results}
+
+\paragraph{Architectural and activation effects.} We evaluated the influence of depth, width, and activation function (Sigmoid, ReLU, Leaky ReLU) on model performance using controlled sweeps. Table~\ref{tab:mse-gen-gap-combined} summarizes results across 27 configurations. Broader heatmaps and sweep plots, available in Appendix A, confirm the following trends:We performed controlled sweeps over depth, width, and activation function (Sigmoid, ReLU, Leaky ReLU) to study their impact on test MSE and generalization. Although the full set of heatmaps is omitted for clarity, they confirm that performance generally improves with depth and width up to moderate values (e.g., $2\times50$), after which gains plateau. ReLU and Leaky ReLU clear a point, with ReLU-type activations generally outperforming Sigmoid, particularly in deeper networks, due to better gradient flow. Generalization gaps remained low (typically $<10^{-4}$), suggesting that our use of batch training and input standardization helped mitigate overfitting—even for high-capacity networks. Generalization gaps also highlighted underfitting in shallow Sigmoid networks and mild overfitting in deeper unregularized networks. Complete visualizations are available in the code (Appendix A, Section d)).
+
+\begin{table*}[t]
+  \caption{Test MSE and generalization gap (test MSE - train MSE) across different architectures and activation functions.}
+  \label{tab:mse-gen-gap-combined}
+  \centering
+  \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lcccccc}
+    \hline\hline
+    Depth$\times$Width & \multicolumn{2}{c}{Sigmoid} & \multicolumn{2}{c}{ReLU} & \multicolumn{2}{c}{Leaky ReLU} \\
+    & Test MSE & Gen. Gap & Test MSE & Gen. Gap & Test MSE & Gen. Gap \\
+    \hline
+    $1\times10$   & $1.38\cdot10^{-3}$ & $8.50\cdot10^{-4}$ & $5.90\cdot10^{-4}$ & $2.20\cdot10^{-4}$ & $3.10\cdot10^{-4}$ & $1.40\cdot10^{-4}$ \\
+    $1\times50$   & $1.90\cdot10^{-4}$ & $7.00\cdot10^{-5}$ & $1.00\cdot10^{-4}$ & $1.00\cdot10^{-5}$ & $1.00\cdot10^{-4}$ & $1.00\cdot10^{-5}$ \\
+    $1\times100$  & $2.20\cdot10^{-4}$ & $4.00\cdot10^{-5}$ & $1.10\cdot10^{-4}$ & $1.00\cdot10^{-5}$ & $1.00\cdot10^{-4}$ & $1.00\cdot10^{-5}$ \\
+    $2\times10$   & $5.60\cdot10^{-4}$ & $2.60\cdot10^{-4}$ & $2.60\cdot10^{-4}$ & $9.00\cdot10^{-5}$ & $1.50\cdot10^{-4}$ & $6.00\cdot10^{-5}$ \\
+    $2\times50$   & $2.00\cdot10^{-4}$ & $7.00\cdot10^{-5}$ & $9.00\cdot10^{-5}$ & $1.00\cdot10^{-5}$ & $8.00\cdot10^{-5}$ & $1.00\cdot10^{-5}$ \\
+    $2\times100$  & $2.60\cdot10^{-4}$ & $6.00\cdot10^{-5}$ & $1.20\cdot10^{-4}$ & $2.00\cdot10^{-5}$ & $1.10\cdot10^{-4}$ & $1.00\cdot10^{-5}$ \\
+    $3\times10$   & $4.60\cdot10^{-4}$ & $1.90\cdot10^{-4}$ & $2.20\cdot10^{-4}$ & $8.00\cdot10^{-5}$ & $1.40\cdot10^{-4}$ & $6.00\cdot10^{-5}$ \\
+    $3\times50$   & $3.00\cdot10^{-4}$ & $9.00\cdot10^{-5}$ & $1.10\cdot10^{-4}$ & $1.00\cdot10^{-5}$ & $1.00\cdot10^{-4}$ & $1.00\cdot10^{-5}$ \\
+    $3\times100$  & $2.70\cdot10^{-4}$ & $6.00\cdot10^{-5}$ & $1.20\cdot10^{-4}$ & $2.00\cdot10^{-5}$ & $1.10\cdot10^{-4}$ & $1.00\cdot10^{-5}$ \\
+    \hline\hline
+  \end{tabular*}
+\end{table*}
+
+
+
+
 We compare classical polynomial regression (OLS/Ridge/Lasso) to our FFNN on the Runge function $f(x)=(1+25x^2)^{-1}$. We report test MSE, visually assess boundary behavior, and analyze architecture, optimizer, learning rate, and regularization effects. Learning dynamics for the best settings are shown in Fig.~\ref{fig:lr-curves}.
+
+The high-degree OLS polynomial (degree 10) fit clearly suffers from Runge’s phenomenon, oscillating near the interval edges despite good performance around the origin. This highlights a key limitation of global polynomial fits in regression: flexibility comes at the cost of instability. In contrast, the FFNN models are able to localize their representation capacity, achieving much lower test MSE with fewer parameters and less overfitting.
 
 % Baseline polynomial vs network comparison
 \begin{figure}[H]
@@ -448,8 +567,16 @@ We compare classical polynomial regression (OLS/Ridge/Lasso) to our FFNN on the 
 
 % Learning rate sweeps for selected architectures
  
-\paragraph{Regularization.} We performed an explicit regularization study on the Runge regression task, sweeping $L_1$ and $L_2$ penalties (strength $\lambda$), learning rate $\eta$, depth, and width for our NumPy FFNN. In total, we evaluated 192 FFNN configurations. Table~\ref{tab:runge-regularization} summarizes the best settings found for each method and their test MSE on the original target scale (after inverting any standardization of $y$). Qualitative behavior appears in Fig.~\ref{fig:runge-regression} and the polynomial baseline in Fig.~\ref{fig:runge-ols-baseline}.
-
+\paragraph{Regularization.} We performed an explicit regularization study on the Runge regression task, sweeping $L_1$ and $L_2$ penalties (strength $\lambda$), learning rate $\eta$, depth, and width for our NumPy FFNN. In total, we evaluated 192 FFNN configurations. Table~\ref{tab:runge-regularization} summarizes the best settings found for each method and their test MSE on the original target scale (after inverting any standardization of $y$). Qualitative behavior appears in Fig.~\ref{fig:runge-regression} and the polynomial baseline in Fig.~\ref{fig:runge-ols-baseline}. Training curves for best models are included~\ref{fig:lr-curves}
+% Export from notebook as: lr_curves.png
+% Regression learning curves (moved from classification section)
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=0.48\textwidth]{learning_curve_for_one_best_config.png}\hfill
+  \includegraphics[width=0.48\textwidth]{learning_curves_test_mse_vs_epoch_for_best_per_activation.png}
+  \caption{Regression learning curves. Left: train/test curves for one best configuration (Runge). Right: test MSE vs epoch for best model per activation (Sigmoid, ReLU, Leaky ReLU) on Runge.}
+  \label{fig:lr-curves}
+\end{figure*}
 \begin{table*}[t]
   \caption{Regularization results on the Runge function (test MSE on original scale). Best FFNNs were found over the grid: depth $\in\{1,2\}$, width $\in\{32,64\}$, $\eta\in\{10^{-3},2\cdot10^{-3},10^{-2}\}$, $\lambda\in\{5\cdot10^{-6},5\cdot10^{-5},5\cdot10^{-4}\}$.}
   \label{tab:runge-regularization}
@@ -471,7 +598,7 @@ We compare classical polynomial regression (OLS/Ridge/Lasso) to our FFNN on the 
   \centering
   \includegraphics[width=0.48\textwidth]{test_mse_vs_lr_arch_1by50.png}\hfill
   \includegraphics[width=0.48\textwidth]{test_mse_vs_lr_arch_2by100.png}
-  \caption{Learning rate sensitivity (Runge) for two architectures: left 1x50, right 2x100. Curves/markers show test MSE vs learning rate for GD, RMSprop, Adam (legend in exported images). Common settings: epochs=300, batch size=128, seed=42, ReLU activation, scaled inputs. Adam exhibits broader stable region; GD deteriorates rapidly for higher $\eta$.}
+  \caption{Learning rate sensitivity (Runge) for two architectures: left 1x50, right 2x100. Curves/markers show test MSE vs learning rate for GD, RMSprop, Adam (legend in exported images). Common settings: epochs=300, batch size=128, seed=42, ReLU activation, scaled inputs. Adam exhibits broader stable region; GD is more sensitive to $\eta$ requiring a larger $\eta$ to converge.}
   \label{fig:runge-lr-sweeps}
 \end{figure*}
 
@@ -484,7 +611,7 @@ We summarize classification performance (MNIST and Fashion-MNIST), show confusio
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.9\columnwidth]{classification_confusion_matrix.png}
-  \caption{Confusion matrix for the evaluated dataset (MNIST or Fashion-MNIST as specified). Include: train/test split, epochs, batch size, activation, learning rate, optimizer, seed.}
+  \caption{Confusion matrix for the evaluated dataset Fashion-MNIST.}
   \label{fig:confusion-matrix}
 \end{figure}
 
@@ -501,15 +628,7 @@ We summarize classification performance (MNIST and Fashion-MNIST), show confusio
 
 
 
-% Export from notebook as: lr_curves.png
-% Regression learning curves (moved from classification section)
-\begin{figure*}[t]
-  \centering
-  \includegraphics[width=0.48\textwidth]{learning_curve_for_one_best_config.png}\hfill
-  \includegraphics[width=0.48\textwidth]{learning_curves_test_mse_vs_epoch_for_best_per_activation.png}
-  \caption{Regression learning curves. Left: train/test curves for one best configuration (Runge). Right: test MSE vs epoch for best model per activation (Sigmoid, ReLU, Leaky ReLU) on Runge.}
-  \label{fig:lr-curves}
-\end{figure*}
+
 
 \paragraph{Library parity.} We compare our NumPy FFNN to a PyTorch MLP of similar size on both tasks to check parity (Runge results reported earlier in Fig.~\ref{fig:runge-regression}).
 
@@ -517,28 +636,75 @@ We summarize classification performance (MNIST and Fashion-MNIST), show confusio
 
 
 \section{Discussion}\label{section:discussion}
-Through this project, we have demonstrated that a fully connected neural network can successfully tackle both regression and classification tasks, often outperforming traditional linear models when the underlying problem is nonlinear. Our FFNN was able to approximate the Runge function more accurately than polynomial regression, highlighting how neural networks avoid the polynomial oscillation issue by learning flexible basis functions. This result aligns with the idea of the universal approximation theorem \cite{goodfellow2016}: even a single hidden layer (with enough neurons) is capable of representing complex functions. In practice, \textcolor{red}{we saw that one hidden layer was enough to handle the 1D regression task, while more layers provided a small benefit for image classification.} The need for careful hyperparameter tuning was a recurring theme; unlike OLS or Ridge regression which have analytical solutions, training a neural network requires choosing architecture (depth, width), learning rate, and other settings that significantly influence the outcome. This reflects the well-known trade-off in machine learning between model complexity and the risk of overfitting or optimization difficulty. We systematically explored this trade-off with our heatmap scans, which visualized how performance first improves and then degrades as model complexity increases, mirroring a bias–variance trade-off curve \cite{hastie2025}.
+Through this project, we have demonstrated that a fully connected neural network can successfully tackle both regression and classification tasks, often outperforming traditional linear models when the underlying problem is nonlinear. On the Runge regression task, our FFNN achieved test MSEs of $5.51\times10^{-6}$ ($L_2$) and $3.96\times10^{-6}$ ($L_1$) on the original scale (Table~\ref{tab:runge-regularization}), compared to $5.52\times10^{-2}$ for Ridge and Lasso. This large gap reflects the limitation of global polynomial bases for the Runge function, and the ability of neural networks to learn flexible, data-driven basis functions. The results are consistent with the universal approximation theorem \cite{goodfellow2016}: even relatively shallow networks can represent complex functions when given sufficient capacity.
 
-One important observation is the impact of modern training techniques on the viability of neural networks. Our experiments with different optimizers underscored why algorithms like ADAM have become popular: \textcolor{red}{they dramatically reduce the training time and remove the need for complex learning rate schedules.} In earlier eras, training deep networks with plain SGD was notoriously slow and unstable (as we experienced when using an inadequate learning rate), but our results show that with ADAM we could train a reasonably deep network on a complex dataset (Fashion-MNIST) to good performance within a feasible number of epochs. This is consistent with findings in the literature that adaptive optimization and techniques like ReLU activations were key to the deep learning revolution \cite{goodfellow2016}. We also found that initial weight scaling is crucial: we started with small random weights (drawn from $\mathcal{N}(0,0.01)$) to ensure neurons operated in their linear regime initially. This was particularly important for Sigmoid activations—without a careful initialization, many Sigmoid neurons would saturate early and cripple the gradient flow. Using ReLU somewhat mitigated this issue, but even there, extremely large initial weights could cause divergent activations. Our approach of using small initial weights and then letting the optimizers adjust proved effective and aligns with recommended practices (such as using Xavier/Glorot initialization, which similarly aims to keep activations in a sensible range at start \cite{goodfellow2016}).
+\medskip
 
-In comparing our custom implementation with PyTorch, we gained insight into the nuances of numerical computation. The slight differences in outcomes (e.g., a 1\% accuracy gap on MNIST) can be attributed to PyTorch’s use of optimized routines and possibly different default initialization or hyperparameter details. PyTorch likely used Glorot initialization for weights by default, whereas we used a simpler small Gaussian; this might explain the marginally faster convergence and higher peak accuracy in the PyTorch model. Additionally, PyTorch’s internal precision handling and vectorization may reduce issues like catastrophic cancellation, leading to a bit more stable training (lower variance in results between runs). However, the fact that both implementations reached essentially the same performance confirms that our manual gradients and updates were implemented correctly. It also highlights that, in terms of pure predictive performance, a well-trained FFNN will yield similar results regardless of the tool—provided the training process is correct—since they are fundamentally optimizing the same objective.
+The optimizer comparison illustrates why adaptive methods such as Adam are widely favored. Across both a shallow architecture (1$\times$50) and a deeper one (2$\times$100$\times$100) (Figure \ref{fig:runge-lr-sweeps}), Adam consistently yields low test MSE for learning rates in the range $10^{-4}$ to $10^{-1}$, with particularly strong performance around $10^{-3}$ and $10^{-2}$. In contrast, plain gradient descent remains unstable across much of the sweep, only improving significantly at very high learning rates (which may cause divergence in other contexts). RMSprop performs comparably to Adam at optimal learning rates but shows slightly higher test error at smaller learning rates. These trends highlight Adam’s robustness to hyperparameter settings and its practical advantage in avoiding the need for finely tuned learning rate schedules.
 
-Our work is situated in the broader context of machine learning methodologies. Classical methods such as OLS, Ridge, and Lasso are limited in the functional forms they can represent (linear combinations of fixed basis functions), but they have the advantage of simplicity, interpretability, and convex optimization guarantees. Neural networks, by contrast, offer a vastly richer hypothesis space (they can approximate any continuous function given enough capacity) but come at the cost of a non-convex training problem and many more hyperparameters. Our results exemplify this trade-off: the OLS polynomial fit failed on the Runge function because a polynomial is a poor global basis for that problem, whereas the NN excelled; yet, training the NN required far more effort and domain knowledge. Similarly, logistic regression (which is essentially a neural network with no hidden layer) is fast and yields decent performance on MNIST, but adding hidden layers (our FFNN) improved accuracy further by capturing nonlinear pixel interactions that a linear model cannot. In practice, the choice between these approaches depends on the problem complexity, the amount of data, and the need for interpretability. A noteworthy downside of neural networks we encountered is the lack of interpretability: while we can examine polynomial coefficients or Lasso-selected features to glean insight, a neural network’s parameters (tens of thousands of weights) are not easily interpretable. Techniques exist to probe neural networks (like saliency maps or feature importance measures), but those were beyond our scope; this remains an important consideration when applying neural networks in fields where model transparency is required.
+\medskip
 
-There are several limitations to our study and implementation. Due to time and computational constraints, we did not exhaustively tune every hyperparameter (for instance, some learning rate schedules and architectural variations were chosen based on a limited grid search). A more thorough hyperparameter optimization (using methods like random search or Bayesian optimization) could potentially improve our model’s performance further. Additionally, our FFNN was relatively shallow and small-scale compared to modern deep learning models. It would be interesting to see how our from-scratch implementation scales to deeper networks or larger datasets; however, training very deep networks might require implementing features like batch normalization or more sophisticated initialization to maintain stable gradients. Another limitation is that our application to image data was restricted to fully connected layers, which do not exploit the 2D structure of images. Consequently, our model needed more parameters to achieve reasonable performance, and it still fell short of convolutional neural network (CNN) models that are known to exceed 99\% accuracy on MNIST. Future work could involve extending our code to implement convolutional layers and pooling, thereby tackling image tasks more efficiently and accurately.
+Initialization also played a noticeable role. In all experiments we initialized weights from a fixed zero-mean Gaussian $\mathcal{N}(0,0.01)$ and set biases to zero (as specified in Sec.~\ref{subsec:analytical} and the implementation description). Although this is not variance-scaled in the Xavier/He sense, the small magnitude prevented early saturation in Sigmoid units and avoided exploding activations in deeper ReLU/Leaky ReLU networks.
 
-Despite these limitations, the project successfully achieved its goals. We built a working neural network from the ground up and applied it to non-trivial tasks, gaining hands-on experience with the inner workings of training algorithms. The insights we gained—such as the importance of activation functions, regularization, and adaptive optimizers—mirror core principles taught in the machine learning literature \cite{deisenroth2020,hastie2025,goodfellow2016}. This reinforces the educational value of re-implementing these algorithms: by reproducing known results (like the Softmax gradient trick and the efficacy of ADAM) ourselves, we not only verified theory with practice but also developed an intuition for how and why neural networks work. 
+\medskip
 
-In summary, our FFNN implementation stands as a strong proof-of-concept that neural networks can unify solutions to regression and classification problems within one framework. With appropriate tuning, they can surpass classical methods on complex tasks, though they come with challenges of their own. The continuing improvement of training techniques and hardware will likely further close the gap between the ease-of-use of neural networks and traditional methods, making neural networks an increasingly accessible tool even for those problems where simpler models used to dominate.
+We also examined architectural choices. Increasing the number of hidden layers and nodes generally improved model capacity, but gains tapered off beyond two hidden layers or widths above 64. Sweeps over depth and width combinations confirmed this (Table~\ref{tab:mse-gen-gap-combined}). We observed that networks with too many parameters relative to data size were prone to overfitting unless regularization was applied. L2 regularization was especially effective in stabilizing training and preventing large parameter growth. L1 regularization, while promoting sparsity, often led to slightly worse predictive performance, likely due to reduced flexibility.
+
+\medskip
+
+For classification, our FFNN with two hidden layers (128 and 64 units) and ReLU activations achieved a test accuracy of almost 97\% on MNIST and around 88\% on Fashion-MNIST, using softmax cross-entropy loss and Adam. Logistic regression equivalent to a neural network without hidden layers reached roughly 92\% on MNIST, confirming that nonlinear hidden layers capture additional structure in the pixel space. The confusion matrix and sample predictions (Fig.~\ref{fig:confusion-matrix}, Fig.~\ref{fig:inference-visualization}) show that most errors occur between visually similar classes, which is expected given the higher complexity of Fashion-MNIST.
+
+\medskip
+
+These results underscore the strengths of neural networks in modeling nonlinear data structures, especially for tasks like Fashion-MNIST where simple models underperform. While MNIST classification was straightforward, Fashion-MNIST benefited from deeper architectures and nonlinearity yet still lags far behind state-of-the-art CNNs. The confusion matrix (Fig.~\ref{fig:confusion-matrix}) illustrates this: classes such as T-shirts (0), trousers (1), and ankle boots (9) are accurately predicted, while others like shirts (6) are often confused with similar-looking categories (e.g., coats or pullovers). This highlights both the potential and the limitations of fully connected FFNNs without spatial priors or data augmentation. Careful tuning of learning rate, depth, activation, and regularization was essential to achieving these results.
+
+\medskip
+
+Comparing our NumPy FFNN to a PyTorch MLP of similar architecture showed closely matched performance, with minor numerical differences likely due to implementation details such as fused operations or different initialization schemes. Importantly, this agreement confirms the correctness of our hand-coded backpropagation, optimizer logic, and loss formulations.
+
+\medskip
+
+Reproducibility and numerical stability were critical throughout the project. We ensured consistent weight initialization, fixed random seeds, and input standardization across tasks. While we did not apply explicit output clipping, our training remained numerically stable due to careful choice of activation functions and learning rates. These practices helped reduce variance and simplify debugging especially important when scaling to deeper networks or more challenging datasets.
+
+\medskip
+
+Overall, our experiments highlight the practical and conceptual benefits of neural networks over classical linear methods: they generalize better in nonlinear tasks and adapt naturally to both regression and classification. However, this flexibility comes at the cost of increased complexity, sensitivity to hyperparameters, and reduced interpretability. While linear models like OLS and Ridge remain attractive for fast, stable solutions on simple data, FFNNs offer a compelling alternative when relationships are highly nonlinear or data is high-dimensional.
 
 \section{Conclusion}\label{section:conclusion}
-We have presented a comprehensive study of a feedforward neural network applied to a regression problem (fitting a challenging Runge function) and a classification problem (handwritten digit and fashion item recognition). The main findings are that our from-scratch FFNN achieved better generalization on the nonlinear regression task than polynomial regression methods, and it attained high accuracy on classification tasks (95\% on MNIST, 88--90\% on Fashion-MNIST) competitive with simple off-the-shelf models. Key contributors to the network’s performance were the use of ReLU activation (which avoided vanishing gradients and sped up training) and the ADAM optimizer (which dramatically improved convergence speed and stability). We demonstrated that moderate network depths (1–2 hidden layers) are sufficient for these tasks, while regularization (especially $L_2$ weight decay) further enhances generalization by curbing overfitting.
+In this project, we successfully developed a feedforward neural network (FFNN) entirely from scratch and demonstrated its ability to handle both regression and classification problems. By comparing our network to traditional regression models such as OLS, Ridge, and Lasso, we found that the FFNN achieved significantly better performance on nonlinear data, particularly for the Runge function, where it reduced the test MSE by several orders of magnitude. This confirms the neural network’s strength in learning complex, nonlinear relationships that are beyond the reach of polynomial-based methods.
 
-Our work highlights both the pros and cons of neural network methods. On the positive side, neural networks offer flexibility and the power to model complex, non-linear relationships that are out of reach for linear models or fixed-basis approaches. They provided us with a unified approach to tackle different types of problems using the same framework. On the downside, they demand significant computational effort and careful hyperparameter tuning. Unlike linear models, they do not guarantee a global optimum solution, and their results can vary depending on initialization and training conditions. Moreover, neural networks are often treated as “black boxes,” lacking the straightforward interpretability of, say, a linear regression’s coefficients. For practitioners, this means neural networks can achieve superior performance, but the results must be evaluated with caution and supplemented by techniques to interpret or validate the model’s behavior.
+For the classification tasks on MNIST and Fashion-MNIST, our FFNN achieved test accuracies of approximately 96--97\% and 88--89\%, respectively. These results align well with expectations for fully connected architectures on these datasets and illustrate how additional hidden layers allow the model to capture more abstract patterns in the data. The confusion matrices further showed that most classification errors occurred between visually similar classes, especially in the more challenging Fashion-MNIST dataset.
 
-There are several avenues for improvement and future work beyond this project. One immediate enhancement would be to implement additional techniques like \textit{dropout} regularization and \textit{batch normalization}, which are known to improve neural network training by preventing overfitting and smoothing optimization, respectively. Exploring more advanced architectures—such as convolutional neural networks for image data or recurrent networks for sequence data—would allow the model to be applied to a wider range of problems and potentially achieve state-of-the-art performance on tasks like Fashion-MNIST. Another future direction is automating the hyperparameter search (using algorithms or tools for hyperparameter optimization) to systematically find the best network configurations rather than relying on manual experimentation. Finally, investigating methods to interpret the learned network (for example, visualizing what hidden neurons respond to, or which input features are most influential) could provide valuable insights and increase the transparency of our models. 
+Among the optimization methods tested, \textsc{adam} consistently provided the most stable and efficient convergence, while \textsc{relu} and Leaky \textsc{relu} activations improved gradient flow and reduced training stagnation compared to sigmoid functions. Regularization, especially L2, played an important role in preventing overfitting and ensuring smooth generalization.
 
-In conclusion, building and training a neural network from scratch gave us a deep understanding of how these models learn and how various design choices affect their performance. The success of our FFNN on both regression and classification tasks demonstrates the versatility of neural networks, while our comparative analysis with traditional methods and library implementations provides confidence in the network’s correctness and effectiveness. As machine learning continues to evolve, the fundamental lessons from this project—about generalization, optimization, and model complexity—will remain pertinent and will guide the development of even more powerful models.
+Overall, this project demonstrates both the power and the challenges of neural networks. While they clearly outperform classical models on nonlinear tasks, they also require careful tuning of hyperparameters, thoughtful regularization, and more computational effort. Still, building the FFNN from first principles provided valuable insights into how backpropagation, optimization, and architectural design interact to produce modern machine learning performance.
+
+
+%\clearpage
+\appendix
+\twocolumngrid % ensure two-column layout for appendices
+
+\section{Source Code}\label{sec:source_code}
+
+The source code for this project is available online: 
+\url{https://github.com/Twaal/applied-data-analysis-and-ml/blob/main/Project2/project2.html}
+
+\section{References}
+
+\bibliographystyle{unsrt}
 \bibliography{biblio}
+
+
+
+
+
+%We have presented a comprehensive study of a feedforward neural network applied to a regression problem (fitting a challenging Runge function) and a classification problem (handwritten digit and fashion item recognition). The main findings are that our from-scratch FFNN achieved better generalization on the nonlinear regression task than polynomial regression methods, and it attained high accuracy on classification tasks (95\% on MNIST, 88--90\% on Fashion-MNIST) competitive with simple off-the-shelf models. Key contributors to the network’s performance were the use of ReLU activation (which avoided vanishing gradients and sped up training) and the ADAM optimizer (which dramatically improved convergence speed and stability). We demonstrated that moderate network depths (1–2 hidden layers) are sufficient for these tasks, while regularization (especially $L_2$ weight decay) further enhances generalization by curbing overfitting.
+
+%Our work highlights both the pros and cons of neural network methods. On the positive side, neural networks offer flexibility and the power to model complex, non-linear relationships that are out of reach for linear models or fixed-basis approaches. They provided us with a unified approach to tackle different types of problems using the same framework. On the downside, they demand significant computational effort and careful hyperparameter tuning. Unlike linear models, they do not guarantee a global optimum solution, and their results can vary depending on initialization and training conditions. Moreover, neural networks are often treated as “black boxes,” lacking the straightforward interpretability of, say, a linear regression’s coefficients. For practitioners, this means neural networks can achieve superior performance, but the results must be evaluated with caution and supplemented by techniques to interpret or validate the model’s behavior.
+
+%There are several avenues for improvement and future work beyond this project. One immediate enhancement would be to implement additional techniques like \textit{dropout} regularization and \textit{batch normalization}, which are known to improve neural network training by preventing overfitting and smoothing optimization, respectively. Exploring more advanced architectures such as convolutional neural networks for image data or recurrent networks for sequence data would allow the model to be applied to a wider range of problems and potentially achieve state-of-the-art performance on tasks like Fashion-MNIST. Another future direction is automating the hyperparameter search (using algorithms or tools for hyperparameter optimization) to systematically find the best network configurations rather than relying on manual experimentation. Finally, investigating methods to interpret the learned network (for example, visualizing what hidden neurons respond to, or which input features are most influential) could provide valuable insights and increase the transparency of our models. 
+
+%In conclusion, building and training a neural network from scratch gave us a deep understanding of how these models learn and how various design choices affect their performance. The success of our FFNN on both regression and classification tasks demonstrates the versatility of neural networks, while our comparative analysis with traditional methods and library implementations provides confidence in the network’s correctness and effectiveness. As machine learning continues to evolve, the fundamental lessons from this project about generalization, optimization, and model complexity will remain pertinent and will guide the development of even more powerful models.
+
 
 \end{document}
