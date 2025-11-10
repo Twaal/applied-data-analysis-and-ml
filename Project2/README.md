@@ -124,3 +124,4 @@ This Jupyter notebook serves as the central script to:
 3. **Regression** — Full suite of training, evaluation, and plotting on the Runge function
 4. **Classification** — Similar pipeline for MNIST and Fashion-MNIST
 5. **Appendix (Optional)** — Additional heatmaps, sweep visualizations, diagnostics
+
