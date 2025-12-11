@@ -84,17 +84,17 @@ def load_split(data_dir: str, split: str) -> Tuple[np.ndarray, np.ndarray]:
 	return np.array(images), np.array(labels)
 
 
-def fit_pca_v2(X_train: np.ndarray, n_components: int = 3, use_standardization: bool = True) -> Tuple[PCA, np.ndarray]:
+def fit_pca_v2(X_train: np.ndarray, n_components: int = 3, standardize: bool = True) -> Tuple[PCA, np.ndarray]:
 	"""Preprocess images (grayscale + normalize). Fit PCA on flattened training images and return (pca, X_train_pca)."""
 	X_gray = np.dot(X_train[..., :3], [0.2989, 0.5870, 0.1140]) # Convert to grayscale - Luminosity Method
-	if use_standardization:
+	if standardize:
 		mean = X_gray.mean()
 		std = X_gray.std() + 1e-8 # Avoid division by zero
 		X_norm = (X_gray - mean) / std
 	else:
 		X_norm = X_gray / 255.0 # Scale to [0,1]
 	
-	X_flat = X_train.reshape(X_norm.shape[0], -1)
+	X_flat = X_norm.reshape(X_norm.shape[0], -1)
 	pca = PCA(n_components=n_components)
 	X_train_pca = pca.fit_transform(X_flat)
 	return pca, X_train_pca
