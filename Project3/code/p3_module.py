@@ -92,6 +92,22 @@ def fit_pca(X_train: np.ndarray, n_components: int = 3) -> Tuple[PCA, np.ndarray
 	return pca, X_train_pca
 
 
+def fit_pca_v2(X_train: np.ndarray, n_components: int = 3, standardize: bool = True) -> Tuple[PCA, np.ndarray]:
+	"""Preprocess images (grayscale + normalize). Fit PCA on flattened training images and return (pca, X_train_pca)."""
+	X_gray = np.dot(X_train[..., :3], [0.2989, 0.5870, 0.1140]) # Convert to grayscale - Luminosity Method
+	if standardize: #standardize per pixel
+		pixel_mean = X_gray.mean(axis=0, keepdims=True)
+		pixel_std = X_gray.std(axis=0, keepdims=True) + 1e-8 # Avoid division by zero
+		X_norm = (X_gray - pixel_mean) / pixel_std
+	else:
+		X_norm = X_gray / 255.0 # Scale to [0,1]
+	
+	X_flat = X_norm.reshape(X_norm.shape[0], -1)
+	pca = PCA(n_components=n_components)
+	X_train_pca = pca.fit_transform(X_flat)
+	return pca, X_train_pca
+
+
 def fit_kmeans(X_features: np.ndarray, n_clusters: int = 2, seed: int = 42) -> KMeans:
 	"""Fit KMeans on feature matrix and return the estimator."""
 	kmeans = KMeans(n_clusters=n_clusters, random_state=seed)
@@ -110,6 +126,29 @@ def pca_kmeans_predict(
 	X_pca = pca.transform(X_flat)
 	labels = kmeans.predict(X_pca)
 	return (1 - labels) if invert_labels else labels
+
+
+def pca_kmeans_predict_v2(
+    X: np.ndarray, pca: PCA, kmeans: KMeans, invert_labels: bool = True
+) -> np.ndarray:
+    """
+    Preprocess images (grayscale + scaling),
+    transform with PCA, and predict cluster labels.
+    """
+    # Grayscale
+    X_gray = np.dot(X[..., :3], [0.2989, 0.5870, 0.1140])
+
+	# Scale to [0,1]
+    X_scaled = X_gray / 255.0
+
+    # Flatten, PCA, k-means
+    X_flat = X_scaled.reshape(X_scaled.shape[0], -1)
+    X_pca = pca.transform(X_flat)
+    labels = kmeans.predict(X_pca)
+
+    return (1 - labels) if invert_labels else labels
+
+
 
 
 def plot_confusion(cm: np.ndarray, title: str) -> None:
