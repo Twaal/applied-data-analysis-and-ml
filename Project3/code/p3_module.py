@@ -7,7 +7,7 @@ Keep functions focused and composable so the notebook stays lean.
 
 import os
 import random
-from typing import Tuple, Dict, Optional
+from typing import List, Tuple, Dict, Optional
 
 import numpy as np
 from PIL import Image
@@ -204,7 +204,7 @@ try:
 		dev_loader: DataLoader,
 		epochs: int = 10,
 		device: Optional[torch.device] = None,
-	) -> Dict[str, float]:
+	):
 		"""Train CNN and return timing + last-epoch metrics."""
 		if device is None:
 			device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -255,6 +255,11 @@ try:
 			"last_dev_loss": dev_losses[-1] if dev_losses else float("nan"),
 			"last_train_acc": train_accs[-1] if train_accs else float("nan"),
 			"last_dev_acc": dev_accs[-1] if dev_accs else float("nan"),
+			# Full series for downstream plots/comparisons
+			"train_losses": train_losses,
+			"dev_losses": dev_losses,
+			"train_accs": train_accs,
+			"dev_accs": dev_accs,
 		}
 
 	def eval_dev_metrics(model: nn.Module, dev_loader: DataLoader, device: Optional[torch.device] = None) -> Dict[str, float]:
