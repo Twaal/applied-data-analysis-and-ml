@@ -346,9 +346,9 @@ def conv2_same(img, k):
 
 def extract_cell_features(
     X,
-    center_r=3.0,
-    ring_r1=4.0,
-    ring_r2=8.0,
+    center_r=2.5,
+    ring_r1=3.5,
+    ring_r2=7.0,
     dark_thr=0.30,
 ):
     """
