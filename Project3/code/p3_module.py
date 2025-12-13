@@ -293,8 +293,8 @@ except Exception:
 
 def fit_pca_v2(X_train: np.ndarray, n_components: int = 3, standardize: bool = True) -> Tuple[PCA, np.ndarray]:
 	"""Preprocess images (grayscale + normalize). Fit PCA on flattened training images and return (pca, X_train_pca)."""
-	X_gray = np.dot(X_train[..., :3], [0.2989, 0.5870, 0.1140]) # Convert to grayscale - Luminosity Method
-	if standardize: #standardize per pixel
+	X_gray = rgb2gray(X_train)
+	if standardize: #standardize per pixel (not used)
 		pixel_mean = X_gray.mean(axis=0, keepdims=True)
 		pixel_std = X_gray.std(axis=0, keepdims=True) + 1e-8 # Avoid division by zero
 		X_norm = (X_gray - pixel_mean) / pixel_std
@@ -317,7 +317,7 @@ def pca_kmeans_predict_v2(
     # Grayscale
     X_gray = np.dot(X[..., :3], [0.2989, 0.5870, 0.1140])
 
-	# Scale to [0,1]
+    # Scale to [0,1]
     X_scaled = X_gray / 255.0
 
     # Flatten, PCA, k-means
@@ -328,7 +328,7 @@ def pca_kmeans_predict_v2(
     return (1 - labels) if invert_labels else labels
 
 
-def rgb2gray(X):
+def rgb2gray(X): # Convert to grayscale - Luminosity Method
     Xg = np.dot(X[..., :3], [0.2989, 0.5870, 0.1140])
     return Xg / 255.0 if Xg.max() > 1.5 else Xg
 
@@ -420,3 +420,42 @@ def best_flip(y_true, y_pred):
     f1_id = f1_score(y_true, y_pred)
     f1_fl = f1_score(y_true, 1 - y_pred)
     return (1 - y_pred) if f1_fl > f1_id else y_pred
+
+
+# ---- PCA + KMeans on engineered features ----
+def fit_feature_pca_kmeans(
+    X_train: np.ndarray,
+    n_components: int = 3,
+    seed: int = 42,
+):
+    """
+    Fit StandardScaler + PCA + KMeans on engineered features.
+    """
+    F_train = extract_cell_features(X_train)
+
+    scaler = StandardScaler()
+    F_train_s = scaler.fit_transform(F_train)
+
+    pca = PCA(n_components=n_components, random_state=seed)
+    Z_train = pca.fit_transform(F_train_s)
+
+    kmeans = KMeans(
+        n_clusters=2,
+        random_state=seed,
+        n_init=50
+    )
+    kmeans.fit(Z_train)
+
+    return scaler, pca, kmeans
+
+
+def predict_feature_pca_kmeans(
+    X: np.ndarray,
+    scaler: StandardScaler,
+    pca: PCA,
+    kmeans: KMeans,
+):
+    F = extract_cell_features(X)
+    F_s = scaler.transform(F)
+    Z = pca.transform(F_s)
+    return kmeans.predict(Z)
