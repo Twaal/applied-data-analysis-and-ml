@@ -92,22 +92,6 @@ def fit_pca(X_train: np.ndarray, n_components: int = 3) -> Tuple[PCA, np.ndarray
 	return pca, X_train_pca
 
 
-def fit_pca_v2(X_train: np.ndarray, n_components: int = 3, standardize: bool = True) -> Tuple[PCA, np.ndarray]:
-	"""Preprocess images (grayscale + normalize). Fit PCA on flattened training images and return (pca, X_train_pca)."""
-	X_gray = np.dot(X_train[..., :3], [0.2989, 0.5870, 0.1140]) # Convert to grayscale - Luminosity Method
-	if standardize: #standardize per pixel
-		pixel_mean = X_gray.mean(axis=0, keepdims=True)
-		pixel_std = X_gray.std(axis=0, keepdims=True) + 1e-8 # Avoid division by zero
-		X_norm = (X_gray - pixel_mean) / pixel_std
-	else:
-		X_norm = X_gray / 255.0 # Scale to [0,1]
-	
-	X_flat = X_norm.reshape(X_norm.shape[0], -1)
-	pca = PCA(n_components=n_components)
-	X_train_pca = pca.fit_transform(X_flat)
-	return pca, X_train_pca
-
-
 def fit_kmeans(X_features: np.ndarray, n_clusters: int = 2, seed: int = 42) -> KMeans:
 	"""Fit KMeans on feature matrix and return the estimator."""
 	kmeans = KMeans(n_clusters=n_clusters, random_state=seed)
@@ -126,29 +110,6 @@ def pca_kmeans_predict(
 	X_pca = pca.transform(X_flat)
 	labels = kmeans.predict(X_pca)
 	return (1 - labels) if invert_labels else labels
-
-
-def pca_kmeans_predict_v2(
-    X: np.ndarray, pca: PCA, kmeans: KMeans, invert_labels: bool = True
-) -> np.ndarray:
-    """
-    Preprocess images (grayscale + scaling),
-    transform with PCA, and predict cluster labels.
-    """
-    # Grayscale
-    X_gray = np.dot(X[..., :3], [0.2989, 0.5870, 0.1140])
-
-	# Scale to [0,1]
-    X_scaled = X_gray / 255.0
-
-    # Flatten, PCA, k-means
-    X_flat = X_scaled.reshape(X_scaled.shape[0], -1)
-    X_pca = pca.transform(X_flat)
-    labels = kmeans.predict(X_pca)
-
-    return (1 - labels) if invert_labels else labels
-
-
 
 
 def plot_confusion(cm: np.ndarray, title: str) -> None:
@@ -243,7 +204,7 @@ try:
 		dev_loader: DataLoader,
 		epochs: int = 10,
 		device: Optional[torch.device] = None,
-	):
+	) -> Dict[str, float]:
 		"""Train CNN and return timing + last-epoch metrics."""
 		if device is None:
 			device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -327,3 +288,135 @@ except Exception:
 	pass
 
 
+# ---- PCA experiments helpers ----
+
+
+def fit_pca_v2(X_train: np.ndarray, n_components: int = 3, standardize: bool = True) -> Tuple[PCA, np.ndarray]:
+	"""Preprocess images (grayscale + normalize). Fit PCA on flattened training images and return (pca, X_train_pca)."""
+	X_gray = np.dot(X_train[..., :3], [0.2989, 0.5870, 0.1140]) # Convert to grayscale - Luminosity Method
+	if standardize: #standardize per pixel
+		pixel_mean = X_gray.mean(axis=0, keepdims=True)
+		pixel_std = X_gray.std(axis=0, keepdims=True) + 1e-8 # Avoid division by zero
+		X_norm = (X_gray - pixel_mean) / pixel_std
+	else:
+		X_norm = X_gray / 255.0 # Scale to [0,1]
+	
+	X_flat = X_norm.reshape(X_norm.shape[0], -1)
+	pca = PCA(n_components=n_components)
+	X_train_pca = pca.fit_transform(X_flat)
+	return pca, X_train_pca
+
+
+def pca_kmeans_predict_v2(
+    X: np.ndarray, pca: PCA, kmeans: KMeans, invert_labels: bool = True
+) -> np.ndarray:
+    """
+    Preprocess images (grayscale + scaling),
+    transform with PCA, and predict cluster labels.
+    """
+    # Grayscale
+    X_gray = np.dot(X[..., :3], [0.2989, 0.5870, 0.1140])
+
+	# Scale to [0,1]
+    X_scaled = X_gray / 255.0
+
+    # Flatten, PCA, k-means
+    X_flat = X_scaled.reshape(X_scaled.shape[0], -1)
+    X_pca = pca.transform(X_flat)
+    labels = kmeans.predict(X_pca)
+
+    return (1 - labels) if invert_labels else labels
+
+
+def rgb2gray(X):
+    Xg = np.dot(X[..., :3], [0.2989, 0.5870, 0.1140])
+    return Xg / 255.0 if Xg.max() > 1.5 else Xg
+
+
+def conv2_same(img, k):
+    kh, kw = k.shape
+    ph, pw = kh // 2, kw // 2
+    pad = np.pad(img, ((ph, ph), (pw, pw)), mode="reflect")
+    out = np.zeros_like(img, dtype=float)
+    for i in range(img.shape[0]):
+        for j in range(img.shape[1]):
+            out[i, j] = np.sum(pad[i:i+kh, j:j+kw] * k)
+    return out
+
+
+def extract_cell_features(
+    X,
+    center_r=3.0,
+    ring_r1=4.0,
+    ring_r2=8.0,
+    dark_thr=0.30,
+):
+    """
+    Extract hand-crafted features from cell images.
+
+    Returns: (N, 12) feature matrix
+    """
+    imgs = rgb2gray(X).astype(float)
+
+    N, H, W = imgs.shape
+    yy, xx = np.mgrid[0:H, 0:W]
+    cy, cx = (H - 1) / 2.0, (W - 1) / 2.0
+    r = np.sqrt((yy - cy)**2 + (xx - cx)**2)
+
+    center = r <= center_r
+    ring   = (r > ring_r1) & (r <= ring_r2)
+
+    sx = np.array([[1, 0, -1],
+                   [2, 0, -2],
+                   [1, 0, -1]], dtype=float) / 4.0
+    sy = sx.T
+    lap = np.array([[0,  1, 0],
+                    [1, -4, 1],
+                    [0,  1, 0]], dtype=float)
+
+    feats = []
+    eps = 1e-8
+
+    for img in imgs:
+        gmean = img.mean() # 1. global brightness
+        gstd  = img.std() # 2. global contrast
+
+        cmean = img[center].mean() # 3. center brightness
+        rmean = img[ring].mean()  # 4. ring brightness
+
+        c_minus_r = cmean - rmean # 5. center and ring brightness difference
+        c_over_r  = (cmean + eps) / (rmean + eps) # 6. center to ring brightness ratio
+
+        center_p90 = np.percentile(img[center], 90) # 7. brightest pixels in center
+        peak_over_ring = (center_p90 + eps) / (rmean + eps) # 8. center peak to ring brightness ratio
+
+        # radial profile
+        rbins = np.clip(r.astype(int), 0, int(r.max()))
+        prof = np.array([img[rbins == k].mean() for k in range(rbins.max()+1)])
+        radial_std = prof.std() # 9. radially symmetric brightness variation
+
+        gx = conv2_same(img, sx)
+        gy = conv2_same(img, sy)
+        edge_energy = np.mean(np.sqrt(gx*gx + gy*gy)) # 10. strength of edges
+
+        l = conv2_same(img, lap)
+        lap_var = l.var() # 11. Laplacian variance (image sharpness)
+
+        dark_frac = np.mean(img < dark_thr) # 12. fraction of dark pixels
+
+        feats.append([
+            gmean, gstd,
+            cmean, rmean,
+            c_minus_r, c_over_r,
+            radial_std, edge_energy, lap_var,
+            dark_frac,
+            center_p90, peak_over_ring
+        ])
+
+    return np.asarray(feats, dtype=float)
+
+
+def best_flip(y_true, y_pred):
+    f1_id = f1_score(y_true, y_pred)
+    f1_fl = f1_score(y_true, 1 - y_pred)
+    return (1 - y_pred) if f1_fl > f1_id else y_pred
