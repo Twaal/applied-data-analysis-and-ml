@@ -11,6 +11,7 @@ from typing import List, Tuple, Dict, Optional
 
 import numpy as np
 from PIL import Image
+from scipy.ndimage import convolve
 
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
@@ -333,7 +334,7 @@ def rgb2gray(X): # Convert to grayscale - Luminosity Method
     return Xg / 255.0 if Xg.max() > 1.5 else Xg
 
 
-def conv2_same(img, k):
+def conv2_same(img, k): # manual convolution replaced by scipy convolve
     kh, kw = k.shape
     ph, pw = kh // 2, kw // 2
     pad = np.pad(img, ((ph, ph), (pw, pw)), mode="reflect")
@@ -357,14 +358,27 @@ def extract_cell_features(
     Returns: (N, 12) feature matrix
     """
     imgs = rgb2gray(X).astype(float)
-
     N, H, W = imgs.shape
+
     yy, xx = np.mgrid[0:H, 0:W]
     cy, cx = (H - 1) / 2.0, (W - 1) / 2.0
     r = np.sqrt((yy - cy)**2 + (xx - cx)**2)
 
     center = r <= center_r
     ring   = (r > ring_r1) & (r <= ring_r2)
+
+	# global features for all images
+    gmean_all = imgs.mean(axis=(1, 2))
+    gstd_all  = imgs.std(axis=(1, 2))
+
+    cmean_all = imgs[:, center].mean(axis=1)
+    rmean_all = imgs[:, ring].mean(axis=1)
+
+    dark_frac_all = (imgs < dark_thr).mean(axis=(1, 2))
+    center_p90_all = np.percentile(imgs[:, center], 90, axis=1)
+
+    rbins = np.clip(r.astype(int), 0, int(r.max()))
+    nbins = rbins.max() + 1
 
     sx = np.array([[1, 0, -1],
                    [2, 0, -2],
@@ -377,32 +391,32 @@ def extract_cell_features(
     feats = []
     eps = 1e-8
 
-    for img in imgs:
-        gmean = img.mean() # 1. global brightness
-        gstd  = img.std() # 2. global contrast
+    for i, img in enumerate(imgs):
+        gmean = gmean_all[i]
+        gstd  = gstd_all[i]
 
-        cmean = img[center].mean() # 3. center brightness
-        rmean = img[ring].mean()  # 4. ring brightness
+        cmean = cmean_all[i]
+        rmean = rmean_all[i]
 
-        c_minus_r = cmean - rmean # 5. center and ring brightness difference
-        c_over_r  = (cmean + eps) / (rmean + eps) # 6. center to ring brightness ratio
+        c_minus_r = cmean - rmean
+        c_over_r  = (cmean + eps) / (rmean + eps)
 
-        center_p90 = np.percentile(img[center], 90) # 7. brightest pixels in center
-        peak_over_ring = (center_p90 + eps) / (rmean + eps) # 8. center peak to ring brightness ratio
+        center_p90 = center_p90_all[i]
+        peak_over_ring = (center_p90 + eps) / (rmean + eps)
 
-        # radial profile
-        rbins = np.clip(r.astype(int), 0, int(r.max()))
-        prof = np.array([img[rbins == k].mean() for k in range(rbins.max()+1)])
-        radial_std = prof.std() # 9. radially symmetric brightness variation
+        # Radial intensity profile
+        prof = np.array([img[rbins == k].mean() for k in range(nbins)])
+        radial_std = prof.std()
 
-        gx = conv2_same(img, sx)
-        gy = conv2_same(img, sy)
-        edge_energy = np.mean(np.sqrt(gx*gx + gy*gy)) # 10. strength of edges
+        # Edge / sharpness features (C-optimized)
+        gx = convolve(img, sx, mode="reflect")
+        gy = convolve(img, sy, mode="reflect")
+        edge_energy = np.mean(np.sqrt(gx*gx + gy*gy))
 
-        l = conv2_same(img, lap)
-        lap_var = l.var() # 11. Laplacian variance (image sharpness)
+        l = convolve(img, lap, mode="reflect")
+        lap_var = l.var()
 
-        dark_frac = np.mean(img < dark_thr) # 12. fraction of dark pixels
+        dark_frac = dark_frac_all[i]
 
         feats.append([
             gmean, gstd,
