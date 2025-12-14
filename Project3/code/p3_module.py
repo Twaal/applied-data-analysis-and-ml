@@ -357,8 +357,21 @@ def extract_cell_features(
     dark_thr=0.30,
 ):
     """
-    Extract hand-crafted features from cell images.
+    Extract hand-crafted features from cell images:
+	1. gmean: Global mean intensity
+	2. gstd: Global intensity standard deviation
+	3. cmean: Mean intensity in center region
+	4. rmean: Mean intensity in surrounding ring
+	5. c_minus_r: Center-ring intensity difference
+	6. c_over_r: Center-ring intensity ratio
+	7. radial_std: Standard deviation of radial intensity profile
+	8. edge_energy: edge energy (gradient magnitude mean)
+	9. lap_var: Laplacian variance (sharpness measure)
+	10. dark_frac: Fraction of dark pixels
+	11. center_p90: 90th percentile intensity in center region
+	12. peak_over_ring: Center peak-to-ring intensity ratio
 
+	
     Returns: (N, 12) feature matrix
     """
     imgs = rgb2gray(X).astype(float)
