@@ -162,11 +162,15 @@ try:
 			super().__init__()
 			self.features = nn.Sequential(
 				nn.Conv2d(3, 16, kernel_size=3, padding=1),
+				# 32x32x16
 				nn.ReLU(inplace=True),
-				nn.MaxPool2d(2),  # 16x16
+				nn.MaxPool2d(2),  
+				# 16x16x16
 				nn.Conv2d(16, 32, kernel_size=3, padding=1),
 				nn.ReLU(inplace=True),
-				nn.MaxPool2d(4),  # 4x4
+				# 16x16x32
+				nn.MaxPool2d(4),  
+				# 4x4x32
 			)
 			self.classifier = nn.Sequential(
 				nn.Flatten(),
@@ -204,6 +208,7 @@ try:
 		train_loader: DataLoader,
 		dev_loader: DataLoader,
 		epochs: int = 10,
+		lr: float = 1e-3,
 		device: Optional[torch.device] = None,
 	) -> Dict[str, float]:
 		"""Train CNN and return timing + last-epoch metrics."""
@@ -211,7 +216,7 @@ try:
 			device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 		model = model.to(device)
 		criterion = nn.CrossEntropyLoss()
-		optimizer = optim.Adam(model.parameters(), lr=1e-3)
+		optimizer = optim.Adam(model.parameters(), lr=lr)
 
 		import time
 
@@ -285,7 +290,6 @@ try:
 		}
 
 except Exception:
-	# PyTorch may be unavailable; CNN helpers will not be defined.
 	pass
 
 
