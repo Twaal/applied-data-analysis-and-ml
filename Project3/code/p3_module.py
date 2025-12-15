@@ -338,7 +338,7 @@ def rgb2gray(X): # Convert to grayscale - Luminosity Method
     return Xg / 255.0 if Xg.max() > 1.5 else Xg
 
 
-def conv2_same(img, k): # manual convolution replaced by scipy convolve
+def conv2_same(img, k): # manual convolution (I think we can use scipy instead?)
     kh, kw = k.shape
     ph, pw = kh // 2, kw // 2
     pad = np.pad(img, ((ph, ph), (pw, pw)), mode="reflect")
