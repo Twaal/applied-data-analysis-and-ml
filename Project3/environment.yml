@@ -1,0 +1,7 @@
+name: fys-stk-4155-project3
+dependencies:
+  - python=3.8.20
+  - pip
+  - pip:
+      - -r requirements.txt
+      - ipykernel
