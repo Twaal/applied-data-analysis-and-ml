@@ -296,15 +296,11 @@ except Exception:
 # ---- PCA experiments helpers ----
 
 
-def fit_pca_v2(X_train: np.ndarray, n_components: int = 3, standardize: bool = True) -> Tuple[PCA, np.ndarray]:
+def fit_pca_v2(X_train: np.ndarray, n_components: int = 3) -> Tuple[PCA, np.ndarray]:
 	"""Preprocess images (grayscale + normalize). Fit PCA on flattened training images and return (pca, X_train_pca)."""
 	X_gray = rgb2gray(X_train)
-	if standardize: #standardize per pixel (not used)
-		pixel_mean = X_gray.mean(axis=0, keepdims=True)
-		pixel_std = X_gray.std(axis=0, keepdims=True) + 1e-8 # Avoid division by zero
-		X_norm = (X_gray - pixel_mean) / pixel_std
-	else:
-		X_norm = X_gray / 255.0 # Scale to [0,1]
+
+	X_norm = X_gray / 255.0 # Scale to [0,1]
 	
 	X_flat = X_norm.reshape(X_norm.shape[0], -1)
 	pca = PCA(n_components=n_components)
@@ -335,18 +331,7 @@ def pca_kmeans_predict_v2(
 
 def rgb2gray(X): # Convert to grayscale - Luminosity Method
     Xg = np.dot(X[..., :3], [0.2989, 0.5870, 0.1140])
-    return Xg / 255.0 if Xg.max() > 1.5 else Xg
-
-
-def conv2_same(img, k): # manual convolution (I think we can use scipy instead?)
-    kh, kw = k.shape
-    ph, pw = kh // 2, kw // 2
-    pad = np.pad(img, ((ph, ph), (pw, pw)), mode="reflect")
-    out = np.zeros_like(img, dtype=float)
-    for i in range(img.shape[0]):
-        for j in range(img.shape[1]):
-            out[i, j] = np.sum(pad[i:i+kh, j:j+kw] * k)
-    return out
+    return Xg
 
 
 def extract_cell_features(
@@ -374,7 +359,7 @@ def extract_cell_features(
 	
     Returns: (N, 12) feature matrix
     """
-    imgs = rgb2gray(X).astype(float)
+    imgs = rgb2gray(X).astype(float) / 255.0
     N, H, W = imgs.shape
 
     yy, xx = np.mgrid[0:H, 0:W]
