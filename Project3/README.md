@@ -51,7 +51,9 @@ python -m ipykernel install --user --name project3
 
 ## Data
 
-The dataset is included under [Project3/data/cells](Project3/data/cells) with three splits: `train/`, `dev/`, `test/`, each with folders `Live_resized/` and `Dead_resized/`. Images are RGB 32×32. If images differ in size, the loader will resize to 32×32.
+Download the dataset and unzip it to a folder named data/ in the Project3 directory. Here is the link: https://drive.google.com/file/d/1Z8IdHF6iOaJ5Ju3LMlaQQGKq4GCqc79b/view?usp=sharing
+
+Then the dataset is included under [Project3/data/cells](Project3/data/cells) with three splits: `train/`, `dev/`, `test/`, each with folders `Live_resized/` and `Dead_resized/`. Images are RGB 32×32. If images differ in size, the loader will resize to 32×32.
 
 
 ## Quickstart (Notebook)
