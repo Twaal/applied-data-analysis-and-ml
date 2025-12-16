@@ -65,17 +65,3 @@ Open and run [Project3/code/project3.ipynb](Project3/code/project3.ipynb). It de
 
 - Set seeds with `set_seed(…)` to make data splits and model init stable where possible.
 - For PyTorch, deterministic settings are enabled when available; GPU vs CPU may still lead to small differences.
-
-
-## Troubleshooting
-
-- CUDA not found: the CNN will automatically run on CPU if no GPU is available.
-- Pillow/PNG errors: ensure `pillow` is installed and readable images reside under the expected folders.
-- scikit-learn warnings about `n_init`: versions are pinned in [Project3/requirements.txt](Project3/requirements.txt).
-- Paths on Windows: prefer forward slashes in notebooks (e.g., `Project3/data/cells`).
-
-
-## Suggested Next Steps
-
-- Extend experiments: cross-validation for feature pipelines; learning rate and architecture sweeps for the CNN.
-- Track metrics and figures in the [report/](Project3/report) folder for your write-up.
